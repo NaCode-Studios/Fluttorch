@@ -39,6 +39,6 @@ class TensorSpec {
   /// Number of elements, or `null` when any dimension is dynamic.
   int? get elementCount {
     if (isDynamic) return null;
-    return shape.fold(1, (a, b) => a * b);
+    return shape.fold<int>(1, (a, b) => a * b);
   }
 }
