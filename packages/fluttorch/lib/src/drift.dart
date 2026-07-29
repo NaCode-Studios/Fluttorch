@@ -5,11 +5,7 @@
 /// per tensor and catches structural divergence that elementwise bounds miss
 /// when magnitudes are small.
 class Tolerance {
-  const Tolerance({
-    this.maxAbsolute,
-    this.maxRelative,
-    this.minCosine,
-  });
+  const Tolerance({this.maxAbsolute, this.maxRelative, this.minCosine});
 
   /// Sensible default for a full-precision export: tight, because nothing
   /// should have changed.

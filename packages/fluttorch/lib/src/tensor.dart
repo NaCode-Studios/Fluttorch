@@ -23,10 +23,17 @@ class TensorSpec {
     required this.shape,
   });
 
+  /// Name as reported by the exported graph, used to key the generated API.
   final String name;
+
+  /// Element type. A backend that cannot handle it must fail at load time
+  /// rather than coerce silently.
   final DType dtype;
+
+  /// Dimensions, innermost last. `-1` marks a dynamic dimension.
   final List<int> shape;
 
+  /// Whether any dimension is unknown until run time.
   bool get isDynamic => shape.contains(-1);
 
   /// Number of elements, or `null` when any dimension is dynamic.

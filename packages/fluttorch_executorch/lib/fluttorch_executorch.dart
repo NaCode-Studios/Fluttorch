@@ -11,6 +11,7 @@ import 'dart:typed_data';
 
 import 'package:fluttorch/fluttorch.dart';
 
+/// Runs models exported by `fluttorch-export` through ExecuTorch.
 class ExecuTorchRuntime implements FluttorchRuntime {
   @override
   Future<List<RuntimeCapabilities>> capabilities() =>
@@ -21,6 +22,5 @@ class ExecuTorchRuntime implements FluttorchRuntime {
     required Uint8List artifact,
     required ModelManifest manifest,
     String? backend,
-  }) =>
-      throw UnimplementedError('see the roadmap: end-to-end spike');
+  }) => throw UnimplementedError('see the roadmap: end-to-end spike');
 }

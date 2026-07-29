@@ -40,5 +40,6 @@ Future<Map<String, List<DriftReport>>> parityMatrix(
 /// The reference inputs and outputs captured from the source model at export
 /// time, resolved from disk or from bundled assets.
 abstract interface class GoldenBundle {
+  /// Every case in the bundle, in the order the exporter captured them.
   List<GoldenCase> get cases;
 }
