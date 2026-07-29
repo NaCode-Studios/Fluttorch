@@ -26,11 +26,11 @@ import argparse
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="fluttorch-export")
     parser.add_argument("--model", required=True, help="module:factory returning an nn.Module")
-    parser.add_argument("--example-inputs", required=True, help="module:factory returning example inputs")
+    parser.add_argument("--example-inputs", required=True, help="module:factory of example inputs")
     parser.add_argument("--out", required=True, help="output directory")
     parser.add_argument("--backend", default="xnnpack", help="lowering backend")
-    parser.add_argument("--quantize", default=None, help="quantization recipe, e.g. int8-static")
-    parser.add_argument("--goldens", type=int, default=16, help="number of reference cases to capture")
+    parser.add_argument("--quantize", default=None, help="recipe, e.g. int8-static")
+    parser.add_argument("--goldens", type=int, default=16, help="reference cases to capture")
     return parser
 
 

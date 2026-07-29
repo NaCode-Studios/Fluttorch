@@ -18,6 +18,3 @@ fluttorch-export = "fluttorch_export.cli:main"
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
-
-[tool.ruff]
-line-length = 100
