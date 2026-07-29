@@ -1,0 +1,23 @@
+[project]
+name = "fluttorch-export"
+version = "0.0.1.dev0"
+description = "Export PyTorch models for Flutter: runtime artifact, signed manifest, and reference goldens for the parity gate."
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "torch>=2.6",
+    "executorch>=1.3",
+]
+
+[project.urls]
+Repository = "https://github.com/NaCode-Studios/Fluttorch"
+
+[project.scripts]
+fluttorch-export = "fluttorch_export.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.ruff]
+line-length = 100
