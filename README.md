@@ -123,3 +123,7 @@ Brand assets and design tokens live in [`docs/brand/`](docs/brand/).
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
+
+## Sponsor
+
+If Fluttorch is useful to you, consider [sponsoring NaCode Studios](https://github.com/sponsors/NaCode-Studios).

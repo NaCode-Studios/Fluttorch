@@ -1,0 +1,34 @@
+version: 2
+updates:
+  # Dart workspace: the root pubspec resolves every package under packages/.
+  - package-ecosystem: pub
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # Batch routine minor/patch bumps into a single PR to cut noise.
+      pub-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # The Python exporter. Pinned low so a torch major never lands unreviewed.
+  - package-ecosystem: pip
+    directory: "/python/fluttorch_export"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      pip-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # GitHub Actions used by the workflows.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns: ["*"]
