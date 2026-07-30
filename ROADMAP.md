@@ -8,6 +8,25 @@ Where Fluttorch is going, milestone by milestone. Released versions and dates li
 Fluttorch is pre-`1.0` and has no released version yet. Until `1.0`, minor versions may break the
 public API; a `STABILITY.md` arrives with the `1.0` line.
 
+Each tier closes with its own tag, and no tag mixes tiers — see
+[`ROADMAP-CONVENTIONS.md`](ROADMAP-CONVENTIONS.md). Tier 0 cuts `0.0.1` rather than a minor, because
+it delivers decisions, a schema and a set of semantics but nothing a user can yet invoke; Tier 1 is
+the first release with a feature in it, and takes `0.1.0`. From there the tiers and the minors run
+together up to `1.0`.
+
+| Tier | Tag |
+| --- | --- |
+| 0 · Foundations | `0.0.1` |
+| 1 · The export contract | `0.1.0` |
+| 2 · Typed bindings | `0.2.0` |
+| 3 · The parity gate | `0.3.0` |
+| 4 · Quantization & attribution | `0.4.0` |
+| 5 · Own runtime | `0.5.0` |
+| 6 · Backend breadth | `0.6.0` |
+| 7 · Runtime independence | `0.7.0` |
+| 8 · Docs & example | `0.8.0` |
+| 9 · Stabilisation | `0.9.0`, then `1.0.0` |
+
 ## Guiding principles
 
 - **The parity gate is the product.** Typed bindings are convenience. Catching numerical drift that
@@ -28,10 +47,10 @@ public API; a `STABILITY.md` arrives with the `1.0` line.
 
 | Milestone | Status |
 | --- | --- |
-| M1 · Audit `executorch_flutter` | 🚧 In progress (targeting `0.1.0`). |
+| M1 · Audit `executorch_flutter` | 🚧 In progress (targeting `0.0.1`). |
 | M2 · End-to-end spike | Planned. |
-| M3 · Manifest schema v1 | 🚧 In progress (targeting `0.1.0`). |
-| M4 · Tolerance semantics | 🚧 In progress (targeting `0.1.0`). |
+| M3 · Manifest schema v1 | 🚧 In progress (targeting `0.0.1`). |
+| M4 · Tolerance semantics | 🚧 In progress (targeting `0.0.1`). |
 | M5 · Export CLI | Planned. |
 | M6 · Signed manifest with weight hash | Planned. |
 | M7 · Golden capture from the source model | Planned. |
@@ -78,7 +97,7 @@ abstracting it.
 
 ### M1 · Audit `executorch_flutter` — `S`
 
-**Status: 🚧 In progress (targeting `0.1.0`).**
+**Status: 🚧 In progress (targeting `0.0.1`).**
 
 Delivered: all four hooks are absent from version 0.5.0. `ExecuTorchModel` exposes `modelId`,
 `load` / `loadFromBytes` / `loadFromAsset`, `forward(List<TensorData>)` and `dispose`, and nothing
@@ -110,7 +129,7 @@ around it — the contract, the tolerance semantics and the runtime interface th
 
 ### M3 · Manifest schema v1 — `M`
 
-**Status: 🚧 In progress (targeting `0.1.0`).**
+**Status: 🚧 In progress (targeting `0.0.1`).**
 
 Delivered: schema v1 with a writer in `fluttorch_export.manifest`, a reader in `ManifestCodec`, and
 `testdata/manifest_v1.json` as the artefact that binds them — Python writes it and Dart re-encodes it
@@ -127,7 +146,7 @@ wrong prediction. A schema on its own would have let both sides drift while each
 
 ### M4 · Tolerance semantics — `S`
 
-**Status: 🚧 In progress (targeting `0.1.0`).**
+**Status: 🚧 In progress (targeting `0.0.1`).**
 
 Delivered: the elementwise bounds combine as `atol + rtol * |reference|` rather than as two
 independent tests, which is the only form that works both near zero and on large magnitudes. Cosine

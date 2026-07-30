@@ -89,6 +89,30 @@ On release you do three things together, so the surfaces never disagree:
   when the tier heading already carries the marker; it is *required* whenever the tier heading is plain.
 - A `Planned.` milestone needs no lead line; its table row already says `Planned.`.
 
+## Tiers, releases and tags
+
+**A release never mixes tiers.** Closing a tier cuts at least one tag, and no tag ever contains work
+from two of them. A tier may take more than one release — a stabilisation tier reasonably cuts an
+RC and then the `1.0` — but the reverse is what destroys traceability: once a tag spans two tiers,
+"when did that land" stops having an answer the roadmap can give.
+
+That makes the tag the unit of record. `ROADMAP.md` says what is planned, `CHANGELOG.md` says what
+shipped, and the tag is the thing you can check out to get the state both were describing. A tier
+closed without one leaves the plan and the history agreeing about a moment nobody can return to.
+
+```bash
+git tag -a v0.3.0 -m "Tier 2 — typed bindings"
+git push origin v0.3.0
+```
+
+Annotated, not lightweight: a tier closing deserves a message, and a lightweight tag carries neither
+author nor date.
+
+**This rule is pre-`1.0` only.** After `1.0`, versions follow API impact and nothing else — a tier
+that lands one additive feature is a minor, and one that lands a breaking change is a major
+regardless of how much of it shipped. Tiers stop driving version numbers at exactly the point where
+SemVer starts making a promise to somebody else.
+
 ## `CHANGELOG.md` conventions
 
 - Keep a Changelog headings only: `Added` / `Changed` / `Deprecated` / `Removed` / `Fixed` / `Security`
@@ -115,3 +139,5 @@ On release you do three things together, so the surfaces never disagree:
 - [ ] `ROADMAP.md`: tier headings re-checked against the single-version rule.
 - [ ] `README.md`: status badge + Roadmap `Shipped` paragraph updated.
 - [ ] Grep check: no `✅` without a following `` `X.Y.Z` ``; no `Shipped`/`Done`/`Live` without a version.
+- [ ] The release contains work from exactly one tier.
+- [ ] Annotated tag pushed: `git tag -a vX.Y.Z -m "<Tier N — theme>"` and `git push origin vX.Y.Z`.
