@@ -28,10 +28,10 @@ public API; a `STABILITY.md` arrives with the `1.0` line.
 
 | Milestone | Status |
 | --- | --- |
-| M1 · Audit `executorch_flutter` | Planned. |
+| M1 · Audit `executorch_flutter` | 🚧 In progress (targeting `0.1.0`). |
 | M2 · End-to-end spike | Planned. |
-| M3 · Manifest schema v1 | Planned. |
-| M4 · Tolerance semantics | Planned. |
+| M3 · Manifest schema v1 | 🚧 In progress (targeting `0.1.0`). |
+| M4 · Tolerance semantics | 🚧 In progress (targeting `0.1.0`). |
 | M5 · Export CLI | Planned. |
 | M6 · Signed manifest with weight hash | Planned. |
 | M7 · Golden capture from the source model | Planned. |
@@ -46,7 +46,7 @@ public API; a `STABILITY.md` arrives with the `1.0` line.
 | M16 · CI recipe for the XNNPACK gate | Planned. |
 | M17 · Quantization recipes | Planned. |
 | M18 · Activation taps and layer attribution | Planned. |
-| M19 · Decision — fork the runtime binding | Planned. |
+| M19 · Schedule the fork | Planned. |
 | M20 · `dart:ffi` binding with deterministic execution | Planned. |
 | M21 · Backends — XNNPACK and Core ML | Planned. |
 | M22 · Migration off the interim dependency | Planned. |
@@ -78,13 +78,31 @@ abstracting it.
 
 ### M1 · Audit `executorch_flutter` — `S`
 
-- Establish whether it exposes intermediate activations, deterministic execution, or backend pinning.
-  Those three decide whether the parity gate can sit on top of it at all.
-- Read the open issues and any stated direction, so the phase-one dependency is a choice rather than
-  an assumption.
-- Output is a written decision, not an impression.
+**Status: 🚧 In progress (targeting `0.1.0`).**
+
+Delivered: all four hooks are absent from version 0.5.0. `ExecuTorchModel` exposes `modelId`,
+`load` / `loadFromBytes` / `loadFromAsset`, `forward(List<TensorData>)` and `dispose`, and nothing
+else. There is no layer or activation API anywhere in `lib/`; no seed or determinism control;
+`executorch_manager_base.dart` contains no reference to a backend at all, so selection happens in the
+build configuration and the same artifact cannot be loaded on two backends within one process; and
+`forward` allocates its outputs rather than accepting a destination. The licence is MIT, so there is
+no compatibility problem.
+
+- Depend on it through Tier 3. `load` and `forward` are exactly what the export toolchain, the
+  generator and final-output parity need, and reimplementing them first would spend the early weeks
+  on the part where nothing is differentiated.
+- M18 and M24 cannot be built on it. Per-layer attribution needs activation taps and deterministic
+  execution; the parity matrix needs load-time backend selection. Two of those do not exist and the
+  third is build-time only.
+- **M19 therefore changes from a decision to a schedule.** The fork is required, and what remains
+  open is when it lands, not whether.
 
 ### M2 · End-to-end spike — `M`
+
+Waiting on a toolchain rather than on a decision: exporting needs `torch` and `executorch` installed,
+and loading needs a device or simulator build. Everything this milestone does not gate has been built
+around it — the contract, the tolerance semantics and the runtime interface the spike will implement
+— so it blocks nothing but itself.
 
 - Two-layer model, exported, loaded in a Flutter app, one output compared against the Python
   reference by hand.
@@ -92,16 +110,36 @@ abstracting it.
 
 ### M3 · Manifest schema v1 — `M`
 
-- Shapes, dtypes, preprocessing steps, labels, weight hash, golden index. Versioned from the first
-  release so old artifacts stay readable.
-- Written as a JSON schema with a Python writer and a Dart reader generated or hand-checked against it.
+**Status: 🚧 In progress (targeting `0.1.0`).**
+
+Delivered: schema v1 with a writer in `fluttorch_export.manifest`, a reader in `ManifestCodec`, and
+`testdata/manifest_v1.json` as the artefact that binds them — Python writes it and Dart re-encodes it
+byte for byte, so a divergence in either implementation fails a test instead of surfacing later as a
+wrong prediction. A schema on its own would have let both sides drift while each stayed valid.
+
+- Shapes, dtypes, preprocessing steps, labels, weight hash and golden index, versioned from the first
+  release so an artifact stays readable after the format moves on.
+- Every decode failure names its field as a dotted path. A newer schema version is refused with both
+  versions named, because the fix there is upgrading the reader.
+- An unrecognised preprocessing step is preserved rather than dropped, and the generator refuses a
+  manifest containing one: tolerating it at the boundary and rejecting it at the generator is what
+  catches a transform this build cannot perform.
 
 ### M4 · Tolerance semantics — `S`
 
-- Absolute, relative and cosine bounds, and which of them a default carries per quantization recipe.
-- Cosine exists because small magnitudes let an elementwise bound pass while the tensor points
-  somewhere else entirely; the defaults must reflect that.
-- Getting this wrong makes the gate either useless or permanently red, so it precedes the gate.
+**Status: 🚧 In progress (targeting `0.1.0`).**
+
+Delivered: the elementwise bounds combine as `atol + rtol * |reference|` rather than as two
+independent tests, which is the only form that works both near zero and on large magnitudes. Cosine
+is checked per tensor and catches the case both elementwise bounds miss, where every value is small
+enough to pass individually while the tensor points elsewhere.
+
+- A tolerance with no bound configured is a constructor error. It previously accepted everything,
+  which for a gate is the worst available failure.
+- A NaN where a number was expected fails however wide the bound; a NaN matched against a NaN passes.
+- Recipe defaults are named `startingPointFor` and return null for an unrecognised recipe rather than
+  inventing a threshold. **The four values are starting points, not measured thresholds**, and are to
+  be replaced once M17 has produced evidence.
 
 ## Tier 1 — The export contract
 
@@ -188,14 +226,21 @@ Where the interesting drift comes from, and where the runtime question gets sett
 - Turns "the output is wrong" into "this op is wrong", and is the feature that requires runtime-level
   access.
 
-### M19 · Decision — fork the runtime binding — `S`
+### M19 · Schedule the fork — `S`
 
-- By this point the required hooks are known precisely. Decide with evidence whether to write an own
-  `dart:ffi` binding or keep the dependency, and record the argument either way.
+- M1 already settled whether: the hooks M18 and M24 need are absent from the dependency, so the fork
+  happens. What is open is when, and that depends on how much of Tier 4 can be delivered against
+  final outputs alone.
+- Re-check the dependency before committing. It is actively developed, and a hook that appears
+  upstream is a hook not worth writing twice.
+- Record the decision either way, including the version audited, so the next person does not repeat
+  the reading.
 
 ## Tier 5 — Own runtime
 
-Undertaken because the gate needs hooks nothing else exposes, not for ownership.
+Undertaken because the gate needs hooks nothing else exposes, not for ownership. M1 established that
+as a fact about version 0.5.0 rather than a suspicion, so this tier is confirmed rather than
+contingent.
 
 ### M20 · `dart:ffi` binding with deterministic execution — `XL`
 
