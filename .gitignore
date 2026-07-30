@@ -27,3 +27,8 @@ doc/api/
 
 .flutter-plugins
 .flutter-plugins-dependencies
+
+# Spike intermediates. The exporter writes here; the copies the integration test
+# actually loads live in the app's assets/ and are committed, so the test runs
+# without a torch install.
+examples/spike/build/
