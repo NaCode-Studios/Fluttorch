@@ -12,7 +12,8 @@ contract is indistinguishable from a measurement.
 
 from __future__ import annotations
 
-import json
+import decimal
+import math
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -251,8 +252,106 @@ class ModelManifest:
     def to_json(self) -> str:
         """Two-space indented JSON with a trailing newline.
 
-        Byte-identical to what the Dart encoder produces for the same manifest,
-        which is what lets a committed manifest diff cleanly regardless of which
-        side last wrote it.
+        Byte-identical to what the Dart reader re-encodes for the same manifest,
+        including how a double is spelled and how non-ASCII is written — see
+        the canonical encoder below for why that does not come for free.
         """
-        return json.dumps(self.to_dict(), indent=2) + "\n"
+        return _canonical_json(self.to_dict()) + "\n"
+
+
+# ── canonical JSON ────────────────────────────────────────────────────────────
+#
+# The manifest is written here and read by ``ManifestCodec`` in Dart, so the two
+# have to agree on how a document is spelled, not merely on what it means.
+# ``json.dumps`` does not: it escapes non-ASCII, and it switches a float to
+# exponential notation at different magnitudes than Dart does and pads the
+# exponent to two digits where Dart does not. Left alone, a normalize mean of
+# 1e-5 makes the two sides disagree byte for byte while both stay valid.
+#
+# Python is the only writer in the pipeline, so it is Python that matches the
+# reader's spelling rather than the reverse.
+
+_ESCAPES = {
+    '"': '\\"',
+    "\\": "\\\\",
+    "\b": "\\b",
+    "\t": "\\t",
+    "\n": "\\n",
+    "\f": "\\f",
+    "\r": "\\r",
+}
+
+
+def _json_string(value: str) -> str:
+    out = ['"']
+    for ch in value:
+        esc = _ESCAPES.get(ch)
+        if esc is not None:
+            out.append(esc)
+        elif ch < " ":
+            out.append(f"\\u{ord(ch):04x}")
+        else:
+            # Non-ASCII stays raw, which is what Dart emits.
+            out.append(ch)
+    out.append('"')
+    return "".join(out)
+
+
+def _json_double(value: float) -> str:
+    """Render a double the way Dart's ``double.toString`` does.
+
+    Fixed notation for ``1e-6 <= |v| < 1e21`` and for zero; exponential outside
+    it, with an unpadded, always-signed exponent. Integral values in the fixed
+    range carry a trailing ``.0``.
+    """
+    if value != value or value in (float("inf"), float("-inf")):
+        raise ManifestError(
+            f"{value!r} cannot appear in a manifest: JSON has no way to write it, "
+            "and a contract that cannot be read back is not a contract"
+        )
+    if value == 0.0:
+        return "-0.0" if math.copysign(1.0, value) < 0 else "0.0"
+
+    d = decimal.Decimal(repr(value))  # repr gives the shortest round-trip digits
+    sign, digits, exponent = d.as_tuple()
+    adjusted = len(digits) + int(exponent) - 1  # power of ten of the leading digit
+    if -7 < adjusted < 21:
+        text = format(abs(d), "f")
+        if "." not in text:
+            text += ".0"
+    else:
+        mantissa = "".join(str(x) for x in digits)
+        if len(mantissa) > 1:
+            mantissa = f"{mantissa[0]}.{mantissa[1:]}"
+        text = f"{mantissa}e{'+' if adjusted >= 0 else '-'}{abs(adjusted)}"
+    return ("-" if sign else "") + text
+
+
+def _canonical_json(value: Any, depth: int = 0) -> str:
+    pad, inner = "  " * depth, "  " * (depth + 1)
+    if value is None:
+        return "null"
+    if value is True:
+        return "true"
+    if value is False:
+        return "false"
+    if isinstance(value, str):
+        return _json_string(value)
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return _json_double(value)
+    if isinstance(value, (list, tuple)):
+        if not value:
+            return "[]"
+        items = ",\n".join(inner + _canonical_json(v, depth + 1) for v in value)
+        return "[\n" + items + "\n" + pad + "]"
+    if isinstance(value, dict):
+        if not value:
+            return "{}"
+        items = ",\n".join(
+            f"{inner}{_json_string(str(k))}: {_canonical_json(v, depth + 1)}"
+            for k, v in value.items()
+        )
+        return "{\n" + items + "\n" + pad + "}"
+    raise ManifestError(f"{type(value).__name__} has no JSON representation")

@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "name": "edge_cases",
+  "weight_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "inputs": [
+    {
+      "name": "scalar",
+      "dtype": "float32",
+      "shape": []
+    },
+    {
+      "name": "ragged",
+      "dtype": "int64",
+      "shape": [
+        -1,
+        -1
+      ]
+    },
+    {
+      "name": "temperatura_°C",
+      "dtype": "float64",
+      "shape": [
+        1
+      ]
+    },
+    {
+      "name": "flags",
+      "dtype": "bool",
+      "shape": [
+        8
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "name": "y",
+      "dtype": "bfloat16",
+      "shape": [
+        1
+      ]
+    }
+  ],
+  "preprocessing": [
+    {
+      "kind": "normalize",
+      "mean": [
+        0.00001,
+        10000000000000000.0,
+        0.3333333333333333,
+        5e-324
+      ],
+      "std": [
+        0.00001,
+        10000000000000000.0,
+        0.3333333333333333,
+        5e-324
+      ],
+      "axis": -1
+    },
+    {
+      "kind": "rescale",
+      "factor": 1e-7,
+      "offset": -0.0
+    },
+    {
+      "kind": "cast",
+      "target": "float32"
+    }
+  ],
+  "labels": [
+    "",
+    "a label with spaces",
+    "unicode ✓"
+  ],
+  "goldens": [
+    {
+      "id": "case-0",
+      "inputs": [
+        "a",
+        "b",
+        "c",
+        "d"
+      ],
+      "outputs": [
+        "e"
+      ]
+    },
+    {
+      "id": "case-1",
+      "inputs": [
+        "a",
+        "b",
+        "c",
+        "d"
+      ],
+      "outputs": [
+        "e"
+      ],
+      "description": "with a description"
+    }
+  ]
+}

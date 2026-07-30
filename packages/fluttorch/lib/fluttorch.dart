@@ -9,6 +9,7 @@
 /// inference path needs them, and an app shipping a model should not carry them.
 library;
 
+export 'src/artifact.dart';
 export 'src/dtype.dart';
 export 'src/errors.dart';
 export 'src/manifest.dart';

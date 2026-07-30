@@ -9,6 +9,12 @@ environment:
 
 resolution: workspace
 
+dependencies:
+  # The one runtime dependency of the core, for the weight-hash check. Hand-rolling
+  # SHA-256 in a library that exists to be trusted about numbers would be a poor
+  # trade against a package the Dart team maintains.
+  crypto: ^3.0.0
+
 dev_dependencies:
   lints: ^6.0.0
   test: ^1.25.0
