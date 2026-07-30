@@ -1,25 +1,32 @@
+<p align="center">
+  <img src="docs/fluttorch-hero.png" alt="Fluttorch — ship PyTorch models to Flutter, and prove the numbers didn't change" width="100%">
+</p>
+
 # Fluttorch
 
 **Ship PyTorch models to Flutter, and prove the numbers didn't change.**
 
 [![CI](https://github.com/NaCode-Studios/Fluttorch/actions/workflows/ci.yaml/badge.svg)](https://github.com/NaCode-Studios/Fluttorch/actions/workflows/ci.yaml)
-[![License](https://img.shields.io/badge/license-Apache%202.0-232B45?labelColor=0B0E17)](LICENSE)
-[![Dart](https://img.shields.io/badge/Dart-3.9-0175C2?logo=dart&logoColor=white&labelColor=0B0E17)](https://dart.dev)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.6-EE4C2C?logo=pytorch&logoColor=white&labelColor=0B0E17)](https://pytorch.org)
+[![License](https://img.shields.io/badge/license-Apache%202.0-23201C?labelColor=100E0C)](LICENSE)
+[![Dart](https://img.shields.io/badge/Dart-3.9-0553B1?logo=dart&logoColor=white&labelColor=100E0C)](https://dart.dev)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.6-EE4C2C?logo=pytorch&logoColor=white&labelColor=100E0C)](https://pytorch.org)
+[![ExecuTorch](https://img.shields.io/badge/ExecuTorch-1.3-EE4C2C?labelColor=100E0C)](https://docs.pytorch.org/executorch/stable/)
 
-Getting a model onto a phone means exporting it and usually quantizing it. Both steps change
-the numbers, and nothing tells you when they change too much: the build succeeds, the app runs,
-the output looks plausible, and the model is wrong. Preprocessing makes it worse — it is written
-once in Python for training and once in Dart for serving, and the two drift apart on the first
-refactor. Fluttorch closes both holes by making the export emit a contract, generating the Dart
-side from that contract, and turning the reference outputs into a test.
+Putting a model on a phone means exporting it, and usually quantizing it. Both steps change the
+numbers, and nothing in the toolchain tells you when they change too much: the build succeeds, the
+app runs, the output looks plausible, and the model is quietly worse than the one you evaluated.
+Preprocessing compounds it — written once in Python for training and again in Dart for serving, the
+two drift apart at the first refactor.
+
+Fluttorch closes both gaps by making the export emit a contract, generating the Dart side from that
+contract, and turning the reference outputs into a test that fails.
 
 ```dart
-// generated from the manifest the exporter emitted — not hand-written
+// generated from the manifest the exporter emitted — never hand-written
 final forecast = await SolarForecast.load();
 final out = await forecast.run(features: window);   // shape- and dtype-checked
 
-// and in your test suite
+// and in the test suite
 await expectParity(forecast, goldens: SolarForecast.goldens, tolerance: Tolerance.int8);
 ```
 
@@ -30,33 +37,34 @@ FAIL  parity/solar_forecast
       first divergence: layer conv3
 ```
 
-Fluttorch does not train, convert between formats, or serve models. It takes a model you have
-already exported with `torch.export`, and it makes the boundary between Python and Dart typed
-and verified.
+Fluttorch does not train models, convert between formats, or serve inference. It takes a model you
+exported with `torch.export` and makes the boundary between Python and Dart typed and verified.
 
-> **Status — pre-alpha, no released version.** The public API does not exist yet; the packages in
-> this repository declare the architecture and nothing more. Progress is tracked on the
-> [roadmap board](https://github.com/orgs/NaCode-Studios/projects/6), and
-> [`ROADMAP.md`](ROADMAP.md) is the plan of record. Pre-`1.0`, minor versions may break.
+> **Status — pre-alpha, no released version.** The public API does not exist yet; the packages here
+> declare the architecture and the contract, nothing more. [`ROADMAP.md`](ROADMAP.md) is the plan of
+> record and the [board](https://github.com/orgs/NaCode-Studios/projects/6) tracks it milestone by
+> milestone. Until `1.0`, minor versions may break.
 
 ## Why Fluttorch
 
-**The parity gate is the product.** Typed bindings are a convenience; catching silent numerical
-drift is the thing nothing else does. Comparing offline, online and post-serialization predictions
-is the documented recommendation everywhere, and it is a manual chore everywhere. Here it is a
-matcher that fails a build.
+**The parity gate is the product.** Typed bindings are a convenience; catching numerical drift is the
+thing nothing else does. Comparing offline, online and post-serialization predictions is the
+documented advice everywhere and a manual chore everywhere. Here it is a matcher that fails a build,
+and it names the tensor, the drift and the backend it measured.
 
 **One contract, three consumers.** Shapes, dtypes, preprocessing, labels and the weight hash are
-emitted once by the exporter and consumed by the code generator, the parity gate and the runtime.
-Nothing on the Dart side restates them, so nothing can disagree with training.
+emitted once by the exporter and read by the code generator, the parity gate and the runtime. Nothing
+on the Dart side restates them, so nothing can disagree with training. The runtime refuses to load an
+artifact whose content hash does not match the manifest it was generated from.
 
-**Runtime-agnostic on purpose.** ExecuTorch is the first backend, not the architecture. A parity
-gate is worth exactly the same on LiteRT and ONNX Runtime, and the interface in
-`packages/fluttorch/lib/src/runtime.dart` is the only seam a backend touches.
+**Runtime-agnostic by construction.** ExecuTorch is the first backend, not the architecture. A parity
+gate is worth exactly the same on LiteRT and ONNX Runtime, and `FluttorchRuntime` is the only seam a
+backend touches.
 
-**Capabilities are reported, never assumed.** Whether a device can expose intermediate activations
-or run deterministically is a property of the hardware. Code that needs either must degrade rather
-than fail, and the parity gate says which backend it actually measured.
+**Capabilities are reported, never assumed.** Whether a device can expose intermediate activations or
+execute deterministically is a property of the hardware, not of the build. Per-layer drift
+attribution depends on both, so they are declared capabilities that code degrades around — and a
+report always says which backend produced it.
 
 ## Architecture
 
@@ -74,29 +82,26 @@ packages/fluttorch          manifest, tensor specs, drift metrics, runtime inter
 | --- | --- |
 | `fluttorch` | The contract and the seam. No backend may be imported here. |
 | `fluttorch_gen` | `build_runner` builder: `*.fluttorch.json` → `*.fluttorch.dart`. |
-| `fluttorch_test` | Replays goldens, measures drift, fails the build. |
+| `fluttorch_test` | Replays the goldens, measures drift, fails the build. |
 | `fluttorch_executorch` | ExecuTorch backend. LiteRT and ONNX Runtime are planned. |
 | `fluttorch-export` (Python) | Emits the artifact, the manifest and the goldens together. |
 
 ## Roadmap
 
-**Next** — the export toolchain and the manifest schema, then typed codegen, then the parity gate
+**Next** — the manifest schema and the export toolchain, then typed codegen, then the parity gate
 over final outputs. Those three make the loop usable end to end on XNNPACK.
 
-**Later** — quantization recipes with per-layer drift attribution, which is what forces the runtime
+**Later** — quantization recipes with per-layer drift attribution. That is what forces the runtime
 question: attributing drift needs activation taps and deterministic execution, and no existing Dart
-binding exposes either. Own `dart:ffi` binding after that, then the multi-backend parity matrix, then
-LiteRT and ONNX Runtime to make the runtime-agnostic claim real rather than stated.
+binding exposes either. An own `dart:ffi` binding follows, then the multi-backend parity matrix, then
+LiteRT and ONNX Runtime to make the runtime-agnostic claim measured rather than stated.
 
-The full plan is [`ROADMAP.md`](ROADMAP.md); the conventions it follows are
-[`ROADMAP-CONVENTIONS.md`](ROADMAP-CONVENTIONS.md), shared with
-[Kdrant](https://github.com/NaCode-Studios/Kdrant) and
-[Kmemo](https://github.com/NaCode-Studios/Kmemo).
+See [`ROADMAP.md`](ROADMAP.md) for the milestone plan and its exit criteria.
 
 ## Building and testing
 
 ```bash
-dart pub get                                   # resolves the workspace
+dart pub get
 dart analyze --fatal-warnings
 dart format --output=none --set-exit-if-changed .
 cd packages/fluttorch && dart test
@@ -109,9 +114,11 @@ ruff check python/ && ruff format --check python/
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). The three ground rules that matter most: the core stays
+See [CONTRIBUTING.md](CONTRIBUTING.md). Three rules shape everything else: the core stays
 runtime-agnostic, the manifest is the single source of truth, and backend capabilities are reported
 rather than assumed.
+
+Brand assets and design tokens live in [`docs/brand/`](docs/brand/).
 
 ## License
 

@@ -1,9 +1,9 @@
 # Roadmap & shipped-state conventions
 
-This is the **single standard** for how the NaCode-Studios libraries (Kmemo, Kdrant, Fluttorch) record where the
+This is the **single standard** for how every NaCode-Studios library records where the
 project is going and what has already shipped. It exists so the same fact is written the same way in
-every repository and on every surface — no second dialect. All three repos keep an identical copy of
-this file; changing the standard means changing it in all three.
+every repository and on every surface — no second dialect. Every library keeps an identical copy of
+this file; changing the standard means changing it everywhere it is kept.
 
 Its whole reason to exist: **"shipped" has exactly one spelling, and it always names the version.**
 

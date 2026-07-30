@@ -1,0 +1,114 @@
+:root {
+  /* ── Ember — training side, identity, primary action ── */
+  --fl-ember-50: #FEF2EE;
+  --fl-ember-100: #FDE0D6;
+  --fl-ember-200: #FBC0AB;
+  --fl-ember-300: #F79878;
+  --fl-ember-400: #F26F4B;
+  --fl-ember-500: #EE4C2C;  /* ★ primary */
+  --fl-ember-600: #D13A1C;
+  --fl-ember-700: #A82C15;
+  --fl-ember-800: #7C2211;
+  --fl-ember-900: #4E170C;
+
+  /* ── Signal — device side, links, information ── */
+  --fl-signal-50: #EAF4FF;
+  --fl-signal-100: #D0E6FF;
+  --fl-signal-200: #A3CDFF;
+  --fl-signal-300: #6FADFB;
+  --fl-signal-400: #3B8CF5;
+  --fl-signal-500: #0B6BE0;
+  --fl-signal-600: #0553B1;  /* ★ device */
+  --fl-signal-700: #044488;
+  --fl-signal-900: #04233F;
+  --fl-beacon: #13B9FD;      /* the device side on dark surfaces only */
+
+  /* ── Graphite — warm neutrals, every surface and every text ── */
+  --fl-graphite-25: #FBF9F7;
+  --fl-graphite-50: #F4F1ED;
+  --fl-graphite-100: #E9E4DE;
+  --fl-graphite-200: #D8D1C9;
+  --fl-graphite-300: #B9B0A6;
+  --fl-graphite-400: #8E857B;
+  --fl-graphite-500: #6B635A;
+  --fl-graphite-600: #4E4740;
+  --fl-graphite-800: #23201C;
+  --fl-graphite-950: #100E0C;
+
+  /* ── semantic surfaces and text, light ── */
+  --fl-paper: var(--fl-graphite-25);
+  --fl-surface: #FFFFFF;
+  --fl-sunken: var(--fl-graphite-50);
+  --fl-line: var(--fl-graphite-100);
+  --fl-line-strong: var(--fl-graphite-200);
+  --fl-ink: var(--fl-graphite-800);
+  --fl-text: var(--fl-graphite-600);
+  --fl-muted: var(--fl-graphite-500);
+  --fl-faint: var(--fl-graphite-400);
+
+  /* ── status — its own family, never borrowed from the brand ramps ── */
+  --fl-pass: #0E8F5E;      --fl-pass-bg: #E6F4EE;
+  --fl-drift: #B4690E;     --fl-drift-bg: #FBF0DE;
+  --fl-fail: #A81E39;      --fl-fail-bg: #FBE9EC;
+  --fl-skipped: var(--fl-graphite-600);
+  --fl-skipped-bg: var(--fl-graphite-50);
+
+  /* ── type — Grotesk names things, Plex explains, Mono reports numbers ── */
+  --fl-font-display: 'Space Grotesk', system-ui, sans-serif;
+  --fl-font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --fl-font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --fl-display: 600 54px/56px var(--fl-font-display);
+  --fl-title: 600 34px/38px var(--fl-font-display);
+  --fl-heading: 600 20px/26px var(--fl-font-display);
+  --fl-body-l: 400 17px/28px var(--fl-font-sans);
+  --fl-body: 400 15px/24px var(--fl-font-sans);
+  --fl-value: 400 13px/20px var(--fl-font-mono);
+  --fl-display-tracking: -.03em;
+  --fl-title-tracking: -.02em;
+  --fl-heading-tracking: -.01em;
+  --fl-wordmark-tracking: -.04em;
+  --fl-eyebrow-tracking: .1em;
+
+  /* ── space — 4px base ── */
+  --fl-s1: 4px;   /* hairline gap   */
+  --fl-s2: 8px;   /* inline items   */
+  --fl-s3: 12px;  /* within a block */
+  --fl-s4: 16px;  /* card padding   */
+  --fl-s5: 24px;  /* card gutter    */
+  --fl-s6: 32px;  /* page margin    */
+  --fl-s7: 56px;  /* section rhythm */
+
+  /* ── radius ── */
+  --fl-r-chip: 4px;
+  --fl-r-field: 8px;
+  --fl-r-card: 12px;
+  --fl-r-tile: 22px;   /* the favicon tile */
+  --fl-r-pill: 999px;
+
+  /* ── elevation — warm and shallow; the page is paper, not glass ── */
+  --fl-e1: 0 0 0 1px var(--fl-line);
+  --fl-e2: 0 1px 2px rgba(35, 32, 28, .06), 0 4px 12px rgba(35, 32, 28, .05);
+  --fl-e3: 0 8px 28px rgba(35, 32, 28, .10);
+  --fl-focus: 0 0 0 3px rgba(5, 83, 177, .22);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fl-paper: var(--fl-graphite-950);
+    --fl-surface: #17140F;
+    --fl-sunken: #100E0C;
+    --fl-line: #2A2620;
+    --fl-line-strong: #3A342C;
+    --fl-ink: var(--fl-graphite-25);
+    --fl-text: var(--fl-graphite-200);
+    --fl-muted: var(--fl-graphite-400);
+    --fl-faint: var(--fl-graphite-500);
+    /* on dark, the device side is the beacon and ember steps back one stop */
+    --fl-pass-bg: #0C231A;
+    --fl-drift-bg: #251C0C;
+    --fl-fail-bg: #2A0F16;
+    --fl-skipped-bg: #1B1813;
+    --fl-e2: 0 1px 2px rgba(0, 0, 0, .5), 0 4px 14px rgba(0, 0, 0, .4);
+    --fl-e3: 0 10px 32px rgba(0, 0, 0, .55);
+  }
+}

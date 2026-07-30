@@ -2,8 +2,8 @@
 
 Where Fluttorch is going, milestone by milestone. Released versions and dates live in
 [`CHANGELOG.md`](CHANGELOG.md); the short human summary lives in the
-[README Roadmap section](README.md#roadmap). This file follows
-[`ROADMAP-CONVENTIONS.md`](ROADMAP-CONVENTIONS.md), the standard shared with Kdrant and Kmemo.
+[README Roadmap section](README.md#roadmap). The structure and the shipped-state vocabulary follow
+[`ROADMAP-CONVENTIONS.md`](ROADMAP-CONVENTIONS.md).
 
 Fluttorch is pre-`1.0` and has no released version yet. Until `1.0`, minor versions may break the
 public API; a `STABILITY.md` arrives with the `1.0` line.
