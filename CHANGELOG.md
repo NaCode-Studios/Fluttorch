@@ -4,8 +4,8 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim in
-[`ROADMAP.md`](ROADMAP.md) can be cross-checked against what actually shipped.
+Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim on the
+[board](https://github.com/orgs/NaCode-Studios/projects/6) can be cross-checked against what actually shipped.
 
 ## [Unreleased]
 
@@ -108,7 +108,7 @@ user can invoke yet, which is what `0.0.1` says that a minor would overstate.
   meet.
 - M1: audited `executorch_flutter` 0.5.0. None of the four hooks the parity gate needs — activation
   taps, deterministic execution, load-time backend selection, caller-supplied output buffers — exist
-  in its public API. Recorded in [`ROADMAP.md`](ROADMAP.md); the consequence is that M19 becomes a
+  in its public API. Recorded on the [board](https://github.com/orgs/NaCode-Studios/projects/6); the consequence is that M19 becomes a
   question of when to fork rather than whether.
 - CI runs every Dart package's suite rather than only the core, and the Python manifest suite, which
   needs neither `torch` nor `executorch`.
