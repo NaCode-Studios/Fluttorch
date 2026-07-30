@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "name": "solar_forecast",
+  "weight_hash": "sha256:2f1c0a",
+  "quantization": "int8-static",
+  "inputs": [
+    {
+      "name": "window",
+      "dtype": "float32",
+      "shape": [
+        1,
+        168,
+        6
+      ]
+    },
+    {
+      "name": "calendar",
+      "dtype": "int64",
+      "shape": [
+        -1,
+        4
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "name": "load_mw",
+      "dtype": "float32",
+      "shape": [
+        1,
+        24
+      ]
+    }
+  ],
+  "preprocessing": [
+    {
+      "kind": "rescale",
+      "factor": 0.00392156862745098,
+      "offset": 0.0
+    },
+    {
+      "kind": "normalize",
+      "mean": [
+        0.5,
+        0.25
+      ],
+      "std": [
+        0.2,
+        0.1
+      ],
+      "axis": 2
+    },
+    {
+      "kind": "resize",
+      "height": 168,
+      "width": 6,
+      "interpolation": "nearest"
+    },
+    {
+      "kind": "center_crop",
+      "height": 160,
+      "width": 6
+    },
+    {
+      "kind": "cast",
+      "target": "float32"
+    }
+  ],
+  "labels": [
+    "low",
+    "high"
+  ],
+  "goldens": [
+    {
+      "id": "case-0",
+      "inputs": [
+        "in/0/window",
+        "in/0/calendar"
+      ],
+      "outputs": [
+        "out/0/load_mw"
+      ],
+      "description": "a winter evening peak"
+    },
+    {
+      "id": "case-1",
+      "inputs": [
+        "in/1/window",
+        "in/1/calendar"
+      ],
+      "outputs": [
+        "out/1/load_mw"
+      ]
+    }
+  ]
+}

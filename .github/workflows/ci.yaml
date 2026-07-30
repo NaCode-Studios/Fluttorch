@@ -34,6 +34,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install ruff
+      - run: pip install ruff pytest
       - run: ruff check python/
       - run: ruff format --check python/
+      # The manifest module has no torch dependency, so its suite runs here.
+      # The shared fixture is asserted from both sides: this job checks Python
+      # still writes it, the dart job checks Dart still reproduces it.
+      - run: python -m pytest python/fluttorch_export/tests -q
+        env:
+          PYTHONPATH: python/fluttorch_export
