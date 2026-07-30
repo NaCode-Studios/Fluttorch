@@ -27,7 +27,11 @@ final forecast = await SolarForecast.load();
 final out = await forecast.run(features: window);   // shape- and dtype-checked
 
 // and in the test suite
-await expectParity(forecast, goldens: SolarForecast.goldens, tolerance: Tolerance.int8);
+await expectParity(
+  forecast,
+  goldens: SolarForecast.goldens,
+  tolerance: Tolerance.startingPointFor('int8-static'),
+);
 ```
 
 ```
@@ -40,9 +44,10 @@ FAIL  parity/solar_forecast
 Fluttorch does not train models, convert between formats, or serve inference. It takes a model you
 exported with `torch.export` and makes the boundary between Python and Dart typed and verified.
 
-> **Status — pre-alpha, no released version.** The public API does not exist yet; the packages here
-> declare the architecture and the contract, nothing more. [`ROADMAP.md`](ROADMAP.md) is the plan of
-> record and the [board](https://github.com/orgs/NaCode-Studios/projects/6) tracks it milestone by
+> **Status — `0.0.1`, foundations.** The contract exists and is enforceable, and a two-layer model
+> already reaches a Flutter app within `2.98e-8` of its PyTorch reference. What does not exist yet is
+> a feature you can invoke: the export CLI arrives with Tier 1. [`ROADMAP.md`](ROADMAP.md) is the plan
+> of record and the [board](https://github.com/orgs/NaCode-Studios/projects/6) tracks it milestone by
 > milestone. Until `1.0`, minor versions may break.
 
 ## Why Fluttorch
@@ -88,8 +93,12 @@ packages/fluttorch          manifest, tensor specs, drift metrics, runtime inter
 
 ## Roadmap
 
-**Next** — the manifest schema and the export toolchain, then typed codegen, then the parity gate
-over final outputs. Those three make the loop usable end to end on XNNPACK.
+**Shipped (`0.0.1`)** — Tier 0. The manifest schema, with a Python writer and a Dart reader that
+reproduce the same document byte for byte; the tensor and tolerance semantics the gate is built on;
+and a spike proving the whole path from `torch.export` to a Flutter app.
+
+**Next** — the export CLI, the signed manifest and golden capture, then typed codegen, then the
+parity gate over final outputs. Those make the loop usable end to end on XNNPACK.
 
 **Later** — quantization recipes with per-layer drift attribution. That is what forces the runtime
 question: attributing drift needs activation taps and deterministic execution, and no existing Dart
@@ -104,13 +113,17 @@ See [`ROADMAP.md`](ROADMAP.md) for the milestone plan and its exit criteria.
 dart pub get
 dart analyze --fatal-warnings
 dart format --output=none --set-exit-if-changed .
-cd packages/fluttorch && dart test
+for p in fluttorch fluttorch_test fluttorch_gen; do (cd packages/$p && dart test); done
 ```
 
 ```bash
-pip install -e python/fluttorch_export
+pip install -e 'python/fluttorch_export[dev]'
 ruff check python/ && ruff format --check python/
+PYTHONPATH=python/fluttorch_export pytest python/fluttorch_export/tests
 ```
+
+The manifest suite needs neither `torch` nor `executorch`. The export half does, and
+[`examples/spike/`](examples/spike/) shows the whole path end to end.
 
 ## Contributing
 

@@ -9,6 +9,13 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.0.1] - 2026-07-30
+
+Tier 0 — Foundations. Decisions, a contract and a set of semantics; no feature a
+user can invoke yet, which is what `0.0.1` says that a minor would overstate.
+
 ### Added
 
 - Manifest schema v1 (M3): `ManifestCodec` reads and writes it in Dart, `fluttorch_export.manifest`
@@ -49,6 +56,10 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
 
 ### Internal
 
+- M2: the pipeline runs end to end — a two-layer model exported, loaded on macOS through
+  `executorch_flutter`, and its output within 2.98e-8 of the PyTorch reference. It also established
+  that `executorch_flutter` requires macOS 11.0, which a freshly generated Flutter project does not
+  meet.
 - M1: audited `executorch_flutter` 0.5.0. None of the four hooks the parity gate needs — activation
   taps, deterministic execution, load-time backend selection, caller-supplied output buffers — exist
   in its public API. Recorded in [`ROADMAP.md`](ROADMAP.md); the consequence is that M19 becomes a
@@ -57,4 +68,5 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
   needs neither `torch` nor `executorch`.
 - 109 tests: 90 Dart across three packages, 19 Python.
 
-[Unreleased]: https://github.com/NaCode-Studios/Fluttorch/commits/main
+[Unreleased]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.0.1...HEAD
+[0.0.1]: https://github.com/NaCode-Studios/Fluttorch/releases/tag/v0.0.1

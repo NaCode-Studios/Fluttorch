@@ -27,6 +27,15 @@ together up to `1.0`.
 | 8 · Docs & example | `0.8.0` |
 | 9 · Stabilisation | `0.9.0`, then `1.0.0` |
 
+## Status — `0.0.1` (current)
+
+Tier 0 closed on 2026-07-30. The contract exists and is enforceable: a manifest that Python writes and
+Dart re-encodes byte for byte, a tensor type that checks `bytes.length == elements × width` at
+construction, a tolerance whose three bounds all do something, and a spike proving a PyTorch model
+reaches a Flutter app with 2.98e-8 of drift.
+
+Nothing in it is a feature a user can invoke. That arrives with Tier 1 and the export CLI.
+
 ## Guiding principles
 
 - **The parity gate is the product.** Typed bindings are convenience. Catching numerical drift that
@@ -47,10 +56,10 @@ together up to `1.0`.
 
 | Milestone | Status |
 | --- | --- |
-| M1 · Audit `executorch_flutter` | 🚧 In progress (targeting `0.0.1`). |
-| M2 · End-to-end spike | Planned. |
-| M3 · Manifest schema v1 | 🚧 In progress (targeting `0.0.1`). |
-| M4 · Tolerance semantics | 🚧 In progress (targeting `0.0.1`). |
+| M1 · Audit `executorch_flutter` | ✅ Shipped in `0.0.1`. |
+| M2 · End-to-end spike | ✅ Shipped in `0.0.1`. |
+| M3 · Manifest schema v1 | ✅ Shipped in `0.0.1`. |
+| M4 · Tolerance semantics | ✅ Shipped in `0.0.1`. |
 | M5 · Export CLI | Planned. |
 | M6 · Signed manifest with weight hash | Planned. |
 | M7 · Golden capture from the source model | Planned. |
@@ -90,14 +99,14 @@ until a runtime interface exists that a WASM backend can satisfy without special
 
 `S` ≈ hours to a day · `M` ≈ several days · `L` ≈ one to two weeks · `XL` ≈ multi-week.
 
-## Tier 0 — Foundations
+## Tier 0 — Foundations — ✅ Shipped in `0.0.1`.
 
 Decide the things that are expensive to change later, and prove the pipeline exists before
 abstracting it.
 
 ### M1 · Audit `executorch_flutter` — `S`
 
-**Status: 🚧 In progress (targeting `0.0.1`).**
+**Status: ✅ Shipped in `0.0.1`.**
 
 Delivered: all four hooks are absent from version 0.5.0. `ExecuTorchModel` exposes `modelId`,
 `load` / `loadFromBytes` / `loadFromAsset`, `forward(List<TensorData>)` and `dispose`, and nothing
@@ -118,18 +127,21 @@ no compatibility problem.
 
 ### M2 · End-to-end spike — `M`
 
-Waiting on a toolchain rather than on a decision: exporting needs `torch` and `executorch` installed,
-and loading needs a device or simulator build. Everything this milestone does not gate has been built
-around it — the contract, the tolerance semantics and the runtime interface the spike will implement
-— so it blocks nothing but itself.
+**Status: ✅ Shipped in `0.0.1`.**
 
-- Two-layer model, exported, loaded in a Flutter app, one output compared against the Python
-  reference by hand.
-- No abstraction, no codegen. The point is to find where the pipeline actually breaks.
+Delivered: `examples/spike/` exports a two-layer model, loads it on macOS through
+`executorch_flutter`, and compares one output against the reference captured before lowering —
+`max |Δ| 2.98e-8` against a bound of `1e-5`, with the weight hash matching.
+
+- macOS is the target because it needs neither a device nor a simulator.
+- It established that `executorch_flutter` requires macOS 11.0, which a freshly generated Flutter
+  project does not meet, and that the seam in `FluttorchRuntime` maps onto the dependency with
+  nothing left over.
+- It confirmed M1's gap in practice: no backend pinning, no activation, no destination buffer.
 
 ### M3 · Manifest schema v1 — `M`
 
-**Status: 🚧 In progress (targeting `0.0.1`).**
+**Status: ✅ Shipped in `0.0.1`.**
 
 Delivered: schema v1 with a writer in `fluttorch_export.manifest`, a reader in `ManifestCodec`, and
 `testdata/manifest_v1.json` as the artefact that binds them — Python writes it and Dart re-encodes it
@@ -146,7 +158,7 @@ wrong prediction. A schema on its own would have let both sides drift while each
 
 ### M4 · Tolerance semantics — `S`
 
-**Status: 🚧 In progress (targeting `0.0.1`).**
+**Status: ✅ Shipped in `0.0.1`.**
 
 Delivered: the elementwise bounds combine as `atol + rtol * |reference|` rather than as two
 independent tests, which is the only form that works both near zero and on large magnitudes. Cosine
