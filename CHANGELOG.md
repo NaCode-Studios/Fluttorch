@@ -11,6 +11,52 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
 
 Nothing yet.
 
+## [0.1.0] - 2026-07-30
+
+Tier 1 — The export contract. One command now produces an artifact, its manifest
+and its goldens together, and the Dart side refuses an artifact that does not
+match the manifest it was handed.
+
+### Added
+
+- `fluttorch-export` (M5): resolves `module:factory` references, lowers through
+  XNNPACK at full precision, and writes the artifact, the manifest and the goldens in
+  one command — together, because the weight hash can only catch a mismatched pair if
+  nothing produces one without the other.
+- `verifyArtifact` and `digestOf` (M6): the runtime refuses an artifact whose digest
+  disagrees with `ModelManifest.weightHash`. An unknown hash algorithm is reported as a
+  format problem rather than a mismatch, because the fix is different.
+- Golden capture from the source model (M7), before lowering, so the references describe
+  the model rather than the export. Without supplied cases the exporter captures the
+  example input alone and says that this is a smoke test, not coverage.
+- `--input-names` and `--output-names`, because a generated accessor called `input_0`
+  is one nobody wants to read.
+- `--dynamic-batch`, marking the leading dimension of every tensor dynamic.
+
+### Changed
+
+- The Python writer emits canonical JSON instead of `json.dumps` (M8). Both languages
+  write the shortest round-trip decimal and then spell it differently — switching to
+  exponential notation at different magnitudes, padding the exponent differently — and
+  Python escaped non-ASCII where Dart does not. Python is the only writer in the
+  pipeline, so it matches the reader.
+
+### Fixed
+
+- The byte-for-byte round trip claimed in `0.0.1` was accidentally true: the fixture
+  happened to hold only values the two languages spell identically. A normalize mean of
+  `1e-5` was enough to break it. It is now true for denormals, negative zero, values on
+  either side of both notation thresholds, and non-ASCII in names and labels.
+
+### Internal
+
+- `testdata/manifest_edge_v1.json` and `testdata/two_layer/`: a hand-written edge-case
+  document, and a real export read back by the code that has to consume it. A contract
+  verified only against documents written to test it is verified against itself.
+- The export suite is skipped where `torch` is absent, which includes CI. That coverage
+  is documented as not run there rather than implied by a green badge.
+- 194 tests locally — 117 Dart, 77 Python. CI runs 117 and 56.
+
 ## [0.0.1] - 2026-07-30
 
 Tier 0 — Foundations. Decisions, a contract and a set of semantics; no feature a
@@ -68,5 +114,6 @@ user can invoke yet, which is what `0.0.1` says that a minor would overstate.
   needs neither `torch` nor `executorch`.
 - 109 tests: 90 Dart across three packages, 19 Python.
 
-[Unreleased]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.0.1...HEAD
+[Unreleased]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.0.1...v0.1.0
 [0.0.1]: https://github.com/NaCode-Studios/Fluttorch/releases/tag/v0.0.1

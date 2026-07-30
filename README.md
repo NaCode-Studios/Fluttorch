@@ -44,11 +44,12 @@ FAIL  parity/solar_forecast
 Fluttorch does not train models, convert between formats, or serve inference. It takes a model you
 exported with `torch.export` and makes the boundary between Python and Dart typed and verified.
 
-> **Status — `0.0.1`, foundations.** The contract exists and is enforceable, and a two-layer model
-> already reaches a Flutter app within `2.98e-8` of its PyTorch reference. What does not exist yet is
-> a feature you can invoke: the export CLI arrives with Tier 1. [`ROADMAP.md`](ROADMAP.md) is the plan
-> of record and the [board](https://github.com/orgs/NaCode-Studios/projects/6) tracks it milestone by
-> milestone. Until `1.0`, minor versions may break.
+> **Status — `0.1.0`, early development.** `fluttorch-export` works: one command produces an
+> artifact, its manifest and its goldens, and the Dart side refuses an artifact that does not match
+> the manifest it was handed. What does not exist yet is the typed API — that is Tier 2.
+> [`ROADMAP.md`](ROADMAP.md) is the plan of record and the
+> [board](https://github.com/orgs/NaCode-Studios/projects/6) tracks it milestone by milestone. Until
+> `1.0`, minor versions may break.
 
 ## Why Fluttorch
 
@@ -93,12 +94,13 @@ packages/fluttorch          manifest, tensor specs, drift metrics, runtime inter
 
 ## Roadmap
 
-**Shipped (`0.0.1`)** — Tier 0. The manifest schema, with a Python writer and a Dart reader that
-reproduce the same document byte for byte; the tensor and tolerance semantics the gate is built on;
-and a spike proving the whole path from `torch.export` to a Flutter app.
+**Shipped (`0.1.0`)** — Tier 0 and Tier 1. The manifest schema, with a canonical Python writer and a
+Dart reader that reproduce the same document byte for byte down to denormals and negative zero; the
+tensor and tolerance semantics the gate is built on; and `fluttorch-export`, which produces an
+artifact, its manifest and its goldens in one command.
 
-**Next** — the export CLI, the signed manifest and golden capture, then typed codegen, then the
-parity gate over final outputs. Those make the loop usable end to end on XNNPACK.
+**Next** — typed codegen from the manifest, then the parity gate over final outputs. Those two make
+the loop usable end to end on XNNPACK.
 
 **Later** — quantization recipes with per-layer drift attribution. That is what forces the runtime
 question: attributing drift needs activation taps and deterministic execution, and no existing Dart

@@ -27,7 +27,19 @@ together up to `1.0`.
 | 8 · Docs & example | `0.8.0` |
 | 9 · Stabilisation | `0.9.0`, then `1.0.0` |
 
-## Status — `0.0.1` (current)
+## Status — `0.1.0` (current)
+
+Tier 1 closed on 2026-07-30. `fluttorch-export` produces an artifact, a manifest and a set of goldens in
+one command, and the Dart side refuses an artifact whose digest disagrees with the manifest it was
+handed.
+
+M8 paid for itself: asserting the round trip over schema-legal documents nobody writes by hand found
+that the byte-for-byte agreement claimed in `0.0.1` held only because the fixture happened to contain
+values the two languages spell the same way. It is now true for the awkward ones too.
+
+What still does not exist is a typed API. Tier 2 generates it.
+
+## Status — `0.0.1`
 
 Tier 0 closed on 2026-07-30. The contract exists and is enforceable: a manifest that Python writes and
 Dart re-encodes byte for byte, a tensor type that checks `bytes.length == elements × width` at
@@ -60,10 +72,10 @@ Nothing in it is a feature a user can invoke. That arrives with Tier 1 and the e
 | M2 · End-to-end spike | ✅ Shipped in `0.0.1`. |
 | M3 · Manifest schema v1 | ✅ Shipped in `0.0.1`. |
 | M4 · Tolerance semantics | ✅ Shipped in `0.0.1`. |
-| M5 · Export CLI | Planned. |
-| M6 · Signed manifest with weight hash | Planned. |
-| M7 · Golden capture from the source model | Planned. |
-| M8 · Manifest round-trip tests | Planned. |
+| M5 · Export CLI | ✅ Shipped in `0.1.0`. |
+| M6 · Signed manifest with weight hash | ✅ Shipped in `0.1.0`. |
+| M7 · Golden capture from the source model | ✅ Shipped in `0.1.0`. |
+| M8 · Manifest round-trip tests | ✅ Shipped in `0.1.0`. |
 | M9 · `build_runner` builder | Planned. |
 | M10 · Generated preprocessing | Planned. |
 | M11 · Compile-time shape and dtype checks | Planned. |
@@ -172,12 +184,24 @@ enough to pass individually while the tensor points elsewhere.
   inventing a threshold. **The four values are starting points, not measured thresholds**, and are to
   be replaced once M17 has produced evidence.
 
-## Tier 1 — The export contract
+## Tier 1 — The export contract — ✅ Shipped in `0.1.0`.
 
 One command produces the artifact, the manifest and the goldens together, so they cannot be
 generated from different states of the model.
 
 ### M5 · Export CLI — `L`
+
+**Status: ✅ Shipped in `0.1.0`.**
+
+Delivered: `fluttorch-export` resolves `module:factory` references, lowers through XNNPACK at full
+precision, and writes the artifact, the manifest and the goldens together.
+
+- Together on purpose: the weight hash only catches a mismatched pair if nothing can produce one
+  without the other.
+- `--input-names` and `--output-names`, because a generated accessor called `input_0` is one nobody
+  wants to read. `--dynamic-batch` marks the leading dimension dynamic.
+- Naming a quantization recipe fails rather than exporting full precision under it, which would put a
+  recipe in the manifest the artifact does not match.
 
 - `torch.export` to a runtime artifact. XNNPACK and full precision only.
 - Model and example inputs addressed as `module:factory`, so the CLI never imports a notebook.
@@ -185,17 +209,48 @@ generated from different states of the model.
 
 ### M6 · Signed manifest with weight hash — `M`
 
+**Status: ✅ Shipped in `0.1.0`.**
+
+Delivered: the exporter records a `sha256:` digest of the artifact, and `verifyArtifact` refuses one
+that disagrees.
+
+- A single flipped byte, a truncation, and a hash with no algorithm are all caught.
+- An algorithm this build cannot compute is a `ManifestFormatException`, not a mismatch: the reader is
+  old, the model is fine, and the fixes are different.
+
 - Content hash of the exported weights recorded in the manifest, and the runtime refuses to load an
   artifact whose hash disagrees.
 - This is what stops a stale model from silently passing a green parity suite.
 
 ### M7 · Golden capture from the source model — `M`
 
+**Status: ✅ Shipped in `0.1.0`.**
+
+Delivered: references captured from the model before lowering, written as raw little-endian bytes the
+Dart `Tensor` wraps without copying.
+
+- Without supplied cases the exporter captures the example input alone and says that one case proves
+  the pipeline runs rather than that the model survived export.
+- An empty golden iterable is refused rather than silently treated as none, because a broken factory
+  and a deliberate omission are different things.
+
 - Reference pairs taken from the model *before* lowering, so they are a reference rather than a
   snapshot of whatever the export happened to produce.
 - Count configurable; the default is small enough to commit.
 
 ### M8 · Manifest round-trip tests — `S`
+
+**Status: ✅ Shipped in `0.1.0`.**
+
+Delivered: the full field set plus the schema-legal documents nobody writes by hand — a rank-0 tensor,
+a fully dynamic shape, denormals, negative zero, values either side of both notation thresholds, and
+non-ASCII in names and labels.
+
+- It found that the byte-for-byte claim made in `0.0.1` was accidentally true. Both languages write
+  the shortest round-trip decimal and then spell it differently, and Python escaped non-ASCII where
+  Dart does not.
+- Fixed by making the Python writer canonical rather than by weakening the claim: Python is the only
+  writer in the pipeline, so it matches the reader.
 
 - Python writer against Dart reader over the full field set, including the cases the schema allows
   but nobody writes by hand.
