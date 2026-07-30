@@ -14,10 +14,14 @@ jobs:
         with:
           sdk: stable
       - run: dart pub get
-      - run: dart format --output=none --set-exit-if-changed .
+      # Scoped to the workspace on purpose. examples/ holds a Flutter app, whose
+      # generated sources use Flutter-SDK language features and whose lints
+      # resolve only under `flutter pub get` — plain Dart tooling cannot parse it
+      # and reports that as a formatting failure. The flutter job below covers it.
+      - run: dart format --output=none --set-exit-if-changed packages/
       # Warnings are fatal; missing-doc infos are surfaced but do not gate,
       # so documenting enum values is a nudge rather than a blocker.
-      - run: dart analyze --fatal-warnings
+      - run: dart analyze --fatal-warnings packages/
       # Every package with a suite, not just the core — a package whose tests
       # are never run is a package without tests.
       - run: dart test
@@ -26,6 +30,23 @@ jobs:
         working-directory: packages/fluttorch_test
       - run: dart test
         working-directory: packages/fluttorch_gen
+
+  # The M2 spike is a Flutter app, so it needs the Flutter SDK to resolve and
+  # parse at all. Analysis only: running it means building for macOS and loading
+  # a native ExecuTorch library, which belongs on the real-device CI of M25.
+  flutter-spike:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter pub get
+        working-directory: examples/spike/flutter_spike
+      - run: flutter analyze
+        working-directory: examples/spike/flutter_spike
+      - run: dart format --output=none --set-exit-if-changed integration_test lib
+        working-directory: examples/spike/flutter_spike
 
   python:
     runs-on: ubuntu-latest
