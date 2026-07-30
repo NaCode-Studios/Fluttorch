@@ -18,8 +18,14 @@ jobs:
       # Warnings are fatal; missing-doc infos are surfaced but do not gate,
       # so documenting enum values is a nudge rather than a blocker.
       - run: dart analyze --fatal-warnings
+      # Every package with a suite, not just the core — a package whose tests
+      # are never run is a package without tests.
       - run: dart test
         working-directory: packages/fluttorch
+      - run: dart test
+        working-directory: packages/fluttorch_test
+      - run: dart test
+        working-directory: packages/fluttorch_gen
 
   python:
     runs-on: ubuntu-latest

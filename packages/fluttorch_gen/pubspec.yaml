@@ -10,11 +10,8 @@ environment:
 resolution: workspace
 
 dependencies:
-  build: ^2.4.0
   fluttorch: ^0.0.1-dev
-  source_gen: ^2.0.0
 
 dev_dependencies:
-  build_runner: ^2.4.0
   lints: ^6.0.0
   test: ^1.25.0
