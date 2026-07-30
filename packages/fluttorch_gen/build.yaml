@@ -1,0 +1,15 @@
+targets:
+  $default:
+    builders:
+      fluttorch_gen|fluttorch:
+        enabled: true
+
+builders:
+  fluttorch:
+    import: "package:fluttorch_gen/fluttorch_gen.dart"
+    builder_factories: ["fluttorchBuilder"]
+    build_extensions: { ".fluttorch.json": [".fluttorch.dart"] }
+    auto_apply: dependents
+    build_to: source
+    # Written next to the manifest rather than into .dart_tool, so the generated
+    # API is readable in review and diffs when the model changes.

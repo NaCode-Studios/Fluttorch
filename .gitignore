@@ -32,3 +32,7 @@ doc/api/
 # actually loads live in the app's assets/ and are committed, so the test runs
 # without a torch install.
 examples/spike/build/
+
+# build_runner bookkeeping. The generated .dart next to the manifest is
+# committed on purpose; this is not.
+.dart_tool/build/

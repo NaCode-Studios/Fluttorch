@@ -29,11 +29,25 @@ void checkGeneratable(ModelManifest manifest) {
         'preprocessing step "${step.kind}" is not understood by this build, '
             'and skipping it would silently drop a transform the model was '
             'trained with',
+    // Resize and crop are understood and still cannot be generated: performing
+    // either means knowing which axes are spatial, and the manifest records no
+    // layout. Emitting a guess would be worse than refusing, because a resize
+    // applied down the wrong axes produces plausible numbers.
+    for (final step in manifest.preprocessing)
+      if (step is ResizeStep || step is CenterCropStep)
+        'preprocessing step "${step.kind}" needs to know which axes are '
+            'spatial, and the manifest records no tensor layout — NCHW and '
+            'NHWC would each produce a plausible and different answer',
     if (manifest.inputs.isEmpty) 'the manifest declares no inputs',
     if (manifest.outputs.isEmpty) 'the manifest declares no outputs',
     for (final spec in [...manifest.inputs, ...manifest.outputs])
       if (spec.name.isEmpty)
         'a tensor has an empty name, so no accessor can be generated for it',
+    for (final step in manifest.preprocessing)
+      if (step is NormalizeStep && manifest.inputs.length != 1)
+        'normalize is recorded once but the model takes '
+            '${manifest.inputs.length} inputs, so there is no way to tell which '
+            'one it applies to',
   ];
   if (reasons.isNotEmpty) throw UnsupportedManifestException(reasons);
 }

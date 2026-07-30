@@ -1,0 +1,17 @@
+name: typed_api_example
+description: Shows what fluttorch_gen produces from a manifest, and how it is used.
+publish_to: none
+
+environment:
+  sdk: ^3.9.0
+
+resolution: workspace
+
+dependencies:
+  fluttorch: ^0.0.1-dev
+
+dev_dependencies:
+  build_runner: ^2.4.0
+  fluttorch_gen: ^0.0.1-dev
+  lints: ^6.0.0
+  test: ^1.25.0

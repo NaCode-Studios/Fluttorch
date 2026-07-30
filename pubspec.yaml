@@ -5,6 +5,7 @@ environment:
   sdk: ^3.9.0
 
 workspace:
+  - examples/typed_api
   - packages/fluttorch
   - packages/fluttorch_executorch
   - packages/fluttorch_gen
