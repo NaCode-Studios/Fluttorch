@@ -140,4 +140,6 @@ SemVer starts making a promise to somebody else.
 - [ ] `README.md`: status badge + Roadmap `Shipped` paragraph updated.
 - [ ] Grep check: no `✅` without a following `` `X.Y.Z` ``; no `Shipped`/`Done`/`Live` without a version.
 - [ ] The release contains work from exactly one tier.
+- [ ] **CI is green on the commit being tagged.** Check it, do not assume it: a local run can pass
+      against a different toolchain than CI uses, and a tag on a red build is a tag nobody can trust.
 - [ ] Annotated tag pushed: `git tag -a vX.Y.Z -m "<Tier N — theme>"` and `git push origin vX.Y.Z`.
