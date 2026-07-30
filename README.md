@@ -47,8 +47,7 @@ exported with `torch.export` and makes the boundary between Python and Dart type
 > **Status — `0.1.0`, early development.** `fluttorch-export` works: one command produces an
 > artifact, its manifest and its goldens, and the Dart side refuses an artifact that does not match
 > the manifest it was handed. What does not exist yet is the typed API — that is Tier 2.
-> [`ROADMAP.md`](ROADMAP.md) is the plan of record and the
-> [board](https://github.com/orgs/NaCode-Studios/projects/6) tracks it milestone by milestone. Until
+> The [board](https://github.com/orgs/NaCode-Studios/projects/6) is the plan of record and tracks it milestone by milestone. Until
 > `1.0`, minor versions may break.
 
 ## Why Fluttorch
@@ -107,7 +106,8 @@ question: attributing drift needs activation taps and deterministic execution, a
 binding exposes either. An own `dart:ffi` binding follows, then the multi-backend parity matrix, then
 LiteRT and ONNX Runtime to make the runtime-agnostic claim measured rather than stated.
 
-See [`ROADMAP.md`](ROADMAP.md) for the milestone plan and its exit criteria.
+The [board](https://github.com/orgs/NaCode-Studios/projects/6) carries the milestone plan and its exit criteria, and every tier is
+a [milestone](https://github.com/NaCode-Studios/Fluttorch/milestones) in this repository.
 
 ## Building and testing
 
