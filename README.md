@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/fluttorch-hero.png" alt="Fluttorch — ship PyTorch models to Flutter, and prove the numbers didn't change" width="100%">
+  <img src="docs/fluttorch-hero.png" alt="Fluttorch: ship PyTorch models to Flutter, and prove the numbers didn't change" width="100%">
 </p>
 
 # Fluttorch
@@ -15,61 +15,67 @@
 Putting a model on a phone means exporting it, and usually quantizing it. Both steps change the
 numbers, and nothing in the toolchain tells you when they change too much: the build succeeds, the
 app runs, the output looks plausible, and the model is quietly worse than the one you evaluated.
-Preprocessing compounds it — written once in Python for training and again in Dart for serving, the
-two drift apart at the first refactor.
+Preprocessing goes wrong the other way round. Written once in Python for training and again in Dart
+for serving, the two copies drift apart at the first refactor.
 
-Fluttorch closes both gaps by making the export emit a contract, generating the Dart side from that
-contract, and turning the reference outputs into a test that fails.
+Fluttorch closes both gaps with one document. The exporter writes a manifest next to the artifact,
+the Dart API is generated from it so that no shape or normalization constant is ever restated by
+hand, and the reference outputs captured during the export replay in your test suite.
 
 ```dart
-// generated from the manifest the exporter emitted — never hand-written
-final forecast = await SolarForecast.load();
+// generated from the manifest the exporter emitted, never hand-written
+final forecast = await SolarForecast.load(runtime, artifact: bytes);
 final out = await forecast.run(features: window);   // shape- and dtype-checked
 
-// and in the test suite
+// and in the test suite, where the tolerance comes from the recipe the
+// manifest records unless you pass one you measured yourself
 await expectParity(
-  forecast,
-  goldens: SolarForecast.goldens,
-  tolerance: Tolerance.startingPointFor('int8-static'),
+  forecast.model,
+  goldens: await DirectoryGoldenBundle.open('build/solar_forecast.fluttorch.json'),
 );
 ```
 
 ```
-FAIL  parity/solar_forecast
+FAIL  parity/case-3
       backend: xnnpack  quantization: int8-static
-      output[0] "load_mw"  max |Δ| 0.118  >  tolerance 0.010
-      first divergence: layer conv3
+      output "load_mw"  max |Δ| 1.72  >  Tolerance(atol 0.1, rtol 0.1, cos ≥ 0.998)  worst at [0]: 14.0210 vs 12.3000
+        2 of 4 elements (50.0%) exceed the elementwise bound
+      no layer attribution: backend "xnnpack" offers no activation taps
 ```
 
 Fluttorch does not train models, convert between formats, or serve inference. It takes a model you
-exported with `torch.export` and makes the boundary between Python and Dart typed and verified.
+exported with `torch.export` and makes the boundary between Python and Dart typed and verified. The
+workflow that runs the gate on every pull request is in
+[`docs/ci-parity-gate.md`](docs/ci-parity-gate.md).
 
 > **Status — `0.2.0`, early development.** The loop from `torch.export` to a typed Dart API works:
 > one command produces an artifact, its manifest and its goldens, and the generated bindings make
-> handing the model the wrong tensor a compile error. What does not exist yet is the parity gate
-> itself — that is Tier 3.
-> The [board](https://github.com/orgs/NaCode-Studios/projects/6) is the plan of record and tracks it milestone by milestone. Until
-> `1.0`, minor versions may break.
+> handing the model the wrong tensor a compile error. The parity gate is merged and waiting for a
+> release. What none of it runs on yet is a device: `fluttorch_executorch` has nothing behind it,
+> so the gate is exercised against replayed goldens rather than against a backend.
+> The [board](https://github.com/orgs/NaCode-Studios/projects/6) is the plan of record and tracks it
+> milestone by milestone. Until `1.0`, minor versions may break.
 
 ## Why Fluttorch
 
-**The parity gate is the product.** Typed bindings are a convenience; catching numerical drift is the
-thing nothing else does. Comparing offline, online and post-serialization predictions is the
-documented advice everywhere and a manual chore everywhere. Here it is a matcher that fails a build,
-and it names the tensor, the drift and the backend it measured.
+The parity gate is the reason this project exists. Typed bindings are a convenience; catching
+numerical drift is the part nothing else does. Comparing offline, online and post-serialization
+predictions is the documented advice everywhere and a manual chore everywhere. Here it is a matcher
+that fails a build, and it names the tensor, the drift and the backend it measured.
 
-**One contract, three consumers.** Shapes, dtypes, preprocessing, labels and the weight hash are
-emitted once by the exporter and read by the code generator, the parity gate and the runtime. Nothing
-on the Dart side restates them, so nothing can disagree with training. The runtime refuses to load an
-artifact whose content hash does not match the manifest it was generated from.
+Shapes, dtypes, preprocessing, labels and the weight hash are emitted once by the exporter and read
+by three consumers: the code generator, the parity gate and the runtime. Nothing on the Dart side
+restates them, so nothing there can disagree with training. The runtime also refuses to load an
+artifact whose content hash is not the one its manifest recorded, which is what catches a re-export
+that updated only half of the pair.
 
-**Runtime-agnostic by construction.** ExecuTorch is the first backend, not the architecture. A parity
-gate is worth exactly the same on LiteRT and ONNX Runtime, and `FluttorchRuntime` is the only seam a
-backend touches.
+ExecuTorch is the first backend, not the architecture. A parity gate is worth exactly the same on
+LiteRT and ONNX Runtime, and `FluttorchRuntime` is the only seam a backend touches. Nothing above
+that seam knows which runtime is executing the model.
 
-**Capabilities are reported, never assumed.** Whether a device can expose intermediate activations or
+Capabilities are reported, never assumed. Whether a device can expose intermediate activations or
 execute deterministically is a property of the hardware, not of the build. Per-layer drift
-attribution depends on both, so they are declared capabilities that code degrades around — and a
+attribution depends on both, so they are declared capabilities that code degrades around, and a
 report always says which backend produced it.
 
 ## Architecture
@@ -94,21 +100,24 @@ packages/fluttorch          manifest, tensor specs, drift metrics, runtime inter
 
 ## Roadmap
 
-**Shipped (`0.2.0`)** — Tiers 0 to 2. The manifest schema, with a canonical Python writer and a Dart
+**Shipped (`0.2.0`).** Tiers 0 to 2. The manifest schema, with a canonical Python writer and a Dart
 reader that reproduce the same document byte for byte down to denormals and negative zero;
 `fluttorch-export`, which produces an artifact, its manifest and its goldens in one command; and
 `fluttorch_gen`, which turns that manifest into an API where the compiler rejects the wrong tensor.
 
-**Next** — the parity gate over final outputs: replaying the goldens on device, measuring the drift,
-and failing the build when it is too large. That is the milestone the rest of this exists to serve.
+**Next.** The parity gate is merged and unreleased. `expectParity` replays the goldens, measures how
+far the numbers moved and fails the build with a report naming the tensor, the bound it broke and
+the backend that ran it. What it has no backend to run on is the next release's problem rather than
+the gate's.
 
-**Later** — quantization recipes with per-layer drift attribution. That is what forces the runtime
+**Later.** Quantization recipes with per-layer drift attribution. That is what forces the runtime
 question: attributing drift needs activation taps and deterministic execution, and no existing Dart
 binding exposes either. An own `dart:ffi` binding follows, then the multi-backend parity matrix, then
 LiteRT and ONNX Runtime to make the runtime-agnostic claim measured rather than stated.
 
-The [board](https://github.com/orgs/NaCode-Studios/projects/6) carries the milestone plan and its exit criteria, and every tier is
-a [milestone](https://github.com/NaCode-Studios/Fluttorch/milestones) in this repository.
+The [board](https://github.com/orgs/NaCode-Studios/projects/6) carries the milestone plan and its
+exit criteria, and every tier is a [milestone](https://github.com/NaCode-Studios/Fluttorch/milestones)
+in this repository.
 
 ## Building and testing
 

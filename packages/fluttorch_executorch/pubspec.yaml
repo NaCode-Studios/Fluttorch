@@ -1,5 +1,5 @@
 name: fluttorch_executorch
-description: ExecuTorch backend for Fluttorch — runs exported PyTorch models on device behind the runtime-agnostic Fluttorch interface.
+description: ExecuTorch backend for Fluttorch. Runs exported PyTorch models on device behind the runtime-agnostic Fluttorch interface.
 version: 0.0.1-dev
 repository: https://github.com/NaCode-Studios/Fluttorch
 publish_to: none

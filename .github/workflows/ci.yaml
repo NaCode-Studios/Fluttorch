@@ -16,16 +16,19 @@ jobs:
       - run: dart pub get
       # Scoped to the workspace on purpose. examples/ holds a Flutter app, whose
       # generated sources use Flutter-SDK language features and whose lints
-      # resolve only under `flutter pub get` — plain Dart tooling cannot parse it
+      # resolve only under `flutter pub get`. Plain Dart tooling cannot parse it
       # and reports that as a formatting failure. The flutter job below covers it.
       - run: dart format --output=none --set-exit-if-changed packages/
       # Warnings are fatal; missing-doc infos are surfaced but do not gate,
       # so documenting enum values is a nudge rather than a blocker.
       - run: dart analyze --fatal-warnings packages/
-      # Every package with a suite, not just the core — a package whose tests
+      # Every package with a suite, not just the core. A package whose tests
       # are never run is a package without tests.
       - run: dart test
         working-directory: packages/fluttorch
+      # The parity gate on every pull request, which includes replaying the
+      # export committed under testdata/. Running it against a device backend
+      # is M25; the recipe consumers copy is in docs/ci-parity-gate.md.
       - run: dart test
         working-directory: packages/fluttorch_test
       - run: dart test

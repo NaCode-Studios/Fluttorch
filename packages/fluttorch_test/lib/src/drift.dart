@@ -86,9 +86,17 @@ final class TensorDrift {
         'output "$tensorName"  max |Δ| '
         '${maxAbsolute.toStringAsPrecision(3)}';
     if (passes) return '$head  ok';
+    if (violatingElements == 0) {
+      // Every element sat inside its own bound and the tensor still points
+      // somewhere else. Printing the elementwise bound here would name the one
+      // thing that did not fail.
+      return 'output "$tensorName"  cosine '
+          '${cosine.toStringAsPrecision(6)}  <  ${tolerance.minCosine} '
+          'required  (max |Δ| ${maxAbsolute.toStringAsPrecision(3)})';
+    }
     final where = worstIndex == null
         ? ''
-        : '  at [$worstIndex]: '
+        : '  worst at [$worstIndex]: '
               '${worstActual!.toStringAsPrecision(6)} vs '
               '${worstReference!.toStringAsPrecision(6)}';
     return '$head  >  $tolerance$where';
@@ -104,6 +112,7 @@ final class DriftReport {
     this.quantization,
     this.firstDivergentLayer,
     this.attributionAttempted = false,
+    this.attributionUnavailable,
   });
 
   final String goldenId;
@@ -118,13 +127,22 @@ final class DriftReport {
 
   /// Earliest layer whose activations diverged.
   ///
-  /// Null means either nothing diverged or the backend offers no activation
-  /// taps — [attributionAttempted] distinguishes the two, because "we looked and
-  /// found nothing" and "we could not look" are different claims.
+  /// Null means either nothing diverged or nothing could be looked at.
+  /// [attributionAttempted] distinguishes the two, because "we looked and found
+  /// nothing" and "we could not look" are different claims.
   final String? firstDivergentLayer;
 
-  /// Whether per-layer attribution was possible on this backend.
+  /// Whether per-layer attribution was possible on this run.
   final bool attributionAttempted;
+
+  /// Why attribution was not possible, when [attributionAttempted] is false.
+  ///
+  /// A backend without activation taps is one reason and the default message
+  /// covers it. It is not the only one: a backend can offer taps while the
+  /// goldens hold no reference activations to compare them against, and a
+  /// report that blamed the hardware for that would send someone looking in the
+  /// wrong place.
+  final String? attributionUnavailable;
 
   bool get passes => tensors.every((t) => t.passes);
 
@@ -143,14 +161,17 @@ final class DriftReport {
       );
     for (final t in passes ? tensors : failures) {
       b.writeln('      $t');
+      if (!t.passes && t.violatingElements > 0) {
+        b.writeln('        ${t.failureReason}');
+      }
     }
     if (!passes) {
       if (firstDivergentLayer != null) {
         b.writeln('      first divergence: layer $firstDivergentLayer');
       } else if (!attributionAttempted) {
         b.writeln(
-          '      no layer attribution: backend "$backend" offers no '
-          'activation taps',
+          '      no layer attribution: '
+          '${attributionUnavailable ?? 'backend "$backend" offers no activation taps'}',
         );
       }
     }
