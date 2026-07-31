@@ -1,5 +1,5 @@
 name: fluttorch_test
-description: Numerical parity gates for on-device models — replays export-time goldens and fails CI when the on-device output drifts from the reference.
+description: Numerical parity gates for on-device models. Replays export-time goldens and fails CI when the on-device output drifts from the reference.
 version: 0.0.1-dev
 repository: https://github.com/NaCode-Studios/Fluttorch
 publish_to: none
