@@ -25,9 +25,8 @@ print(out.score.values);
 The wrappers are extension types, so none of that costs anything at run time.
 
 Shapes are checked where they can be. `TwoLayerFeatures(values)` refuses a list that is not exactly
-four long, because the export fixed that dimension. A tensor with a dynamic dimension gets
-`withShape` instead — deliberately wordier, since its shape is the one thing the compiler cannot
-check for you.
+four long, because the export fixed that dimension. A tensor with a dynamic dimension gets `withShape`
+instead, which is deliberately wordier: its shape is the one thing the compiler cannot check for you.
 
 `TwoLayer.load` verifies the artifact against the digest the manifest recorded, and refuses one that
 does not match. That check is why nothing here takes a manifest as an argument: the generated class

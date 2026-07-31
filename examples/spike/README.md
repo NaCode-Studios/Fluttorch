@@ -19,8 +19,8 @@ Against `Tolerance.startingPointFor(null)`, whose absolute bound is `1e-5`. The 
 three orders of magnitude inside it, which is what a full-precision export through XNNPACK should
 look like: the graph was re-ordered, not re-quantized.
 
-The weight hash also matched, which means the artifact and its manifest came from the same export —
-the check that stops a green parity suite from running over a model nobody evaluated.
+The weight hash also matched, so the artifact and its manifest came from the same export. That is the
+check that stops a green parity suite from running over a model nobody evaluated.
 
 ## Running it
 
@@ -37,15 +37,14 @@ supports works the same way.
 
 ## What it established
 
-**`executorch_flutter` needs macOS 11.0.** A freshly generated Flutter project targets 10.15 and
-fails to build against it. `macos/Runner.xcodeproj` here is set to 11.0; any consumer will hit the
-same wall, so the eventual backend package has to say so.
+`executorch_flutter` needs macOS 11.0. A freshly generated Flutter project targets 10.15 and fails to
+build against it. `macos/Runner.xcodeproj` here is set to 11.0; any consumer will hit the same wall,
+so the eventual backend package has to say so.
 
-**The seam in `FluttorchRuntime` is the right shape.** `loadFromBytes` then `forward` maps onto
-`load` and `run` with nothing left over, which is the evidence that the interface was designed
-against reality rather than ahead of it.
+The seam in `FluttorchRuntime` is the right shape. `loadFromBytes` then `forward` maps onto `load`
+and `run` with nothing left over, which is the evidence that the interface was designed against
+reality rather than ahead of it.
 
-**The gap M1 identified is real in practice, not just in the API surface.** Nothing in this spike
-could pin a backend, read an intermediate activation, or hand `forward` a destination buffer. Final
-outputs are all that is reachable, which is exactly what Tier 1 through Tier 3 need — and exactly
-what Tier 4 does not.
+The gap M1 identified is real in practice, not only in the API surface. Nothing in this spike could
+pin a backend, read an intermediate activation, or hand `forward` a destination buffer. Final outputs
+are all that is reachable, which is what Tier 1 through Tier 3 need and what Tier 4 does not.

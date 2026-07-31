@@ -1,17 +1,13 @@
 # fluttorch_spike
 
-A new Flutter project.
+The Flutter host for the M2 spike. It loads the artifact, the manifest and the golden committed under
+`assets/`, runs the model through `executorch_flutter` on macOS, and compares the output against the
+reference PyTorch produced before lowering.
 
-## Getting Started
+```bash
+flutter test integration_test -d macos
+```
 
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
-
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+The deployment target is macOS 11.0, which `executorch_flutter` requires and a freshly generated
+Flutter project does not meet. See [`../README.md`](../README.md) for what the spike measured and
+what it established.
