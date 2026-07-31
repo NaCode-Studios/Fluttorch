@@ -11,6 +11,50 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
 
 Nothing yet.
 
+## [0.2.0] - 2026-07-31
+
+Tier 2 — Typed bindings. A manifest now becomes a Dart API in which handing the
+model the wrong tensor is a compile error.
+
+### Added
+
+- `fluttorch_gen` emits a typed API from a manifest (M9). Each tensor becomes its own
+  extension type, so `run` cannot be called with the wrong one and the wrapper costs
+  nothing at run time. The generated class embeds its manifest, so `load` verifies the
+  artifact against the digest it was generated for with no separate plumbing, and
+  `wrap` covers a model loaded through some other path.
+- Preprocessing generated from the manifest (M10), with the constants training used
+  compiled in. Rescale, normalize and cast are emitted; nothing is written by hand on
+  the Dart side, which is what makes train/serve skew structurally impossible rather
+  than merely discouraged.
+- A checked constructor for every fixed shape, and `withShape` as the single escape
+  hatch where a dimension is dynamic and the compiler cannot help (M11).
+- `examples/typed_api`, showing what the generator produces and how it is used.
+
+### Changed
+
+- The generator formats its own output with the repository's formatter, so generated
+  code needs no formatting pass and a pinned golden cannot drift from the emitter over
+  line breaks alone.
+
+### Internal
+
+- Resize and center_crop are refused rather than generated (M10). Performing either
+  means knowing which axes are spatial, and the manifest records no tensor layout —
+  NCHW and NHWC would each produce a plausible and different answer. This is a gap in
+  the schema, not in the generator, and generating a guess would be worse than
+  refusing.
+- The generator's output is pinned and compiled (M12): the golden lives in a package CI
+  analyses, so a generator that emits code which does not compile fails the build rather
+  than the diff. CI also runs the builder over `examples/typed_api` and fails if the
+  committed output comes back different, which catches a builder that works only in a
+  test harness.
+- The plan moved onto the board and `ROADMAP.md` and `ROADMAP-CONVENTIONS.md` were
+  retired, so no file restates what the board owns.
+- Code ownership points at the `libraries` team rather than a single account, so review
+  redistributes on its own as the team changes.
+- 150 Dart tests across four packages.
+
 ## [0.1.0] - 2026-07-30
 
 Tier 1 — The export contract. One command now produces an artifact, its manifest
@@ -114,6 +158,7 @@ user can invoke yet, which is what `0.0.1` says that a minor would overstate.
   needs neither `torch` nor `executorch`.
 - 109 tests: 90 Dart across three packages, 19 Python.
 
-[Unreleased]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.0.1...v0.1.0
 [0.0.1]: https://github.com/NaCode-Studios/Fluttorch/releases/tag/v0.0.1
