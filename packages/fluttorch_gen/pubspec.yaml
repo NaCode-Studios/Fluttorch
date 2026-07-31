@@ -10,8 +10,15 @@ environment:
 resolution: workspace
 
 dependencies:
+  build: ^2.4.0
+  # The generator formats its own output with the formatter the repository uses,
+  # so generated code needs no formatting pass and a golden cannot drift from the
+  # emitter over whitespace.
+  dart_style: ^3.0.0
   fluttorch: ^0.0.1-dev
+  pub_semver: ^2.1.0
 
 dev_dependencies:
+  build_runner: ^2.4.0
   lints: ^6.0.0
   test: ^1.25.0

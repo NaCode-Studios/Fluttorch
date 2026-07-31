@@ -30,6 +30,14 @@ jobs:
         working-directory: packages/fluttorch_test
       - run: dart test
         working-directory: packages/fluttorch_gen
+      # The generator has to actually run, not merely be unit-tested: the
+      # committed output is regenerated and must come back identical, which
+      # catches a builder that works only in a test harness.
+      - run: dart run build_runner build --delete-conflicting-outputs
+        working-directory: examples/typed_api
+      - run: git diff --exit-code examples/typed_api/lib
+      - run: dart test
+        working-directory: examples/typed_api
 
   # The M2 spike is a Flutter app, so it needs the Flutter SDK to resolve and
   # parse at all. Analysis only: running it means building for macOS and loading

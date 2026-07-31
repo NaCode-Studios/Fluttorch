@@ -2,12 +2,12 @@
 ///
 /// The generated class carries the model's shapes, dtypes, labels and
 /// preprocessing, so the Dart side cannot disagree with the Python side that
-/// produced them.
-///
-/// Not wired into `build_runner` yet: a builder factory is only declared once it
-/// returns a builder, because declaring one that throws turns adding this
-/// package as a dependency into a build failure rather than a no-op. The factory
-/// and its `build.yaml` land together in M9.
+/// produced them. Each tensor becomes its own type, which is what makes handing
+/// `run` the wrong one a compile error rather than a shape mismatch discovered
+/// at inference.
 library;
 
+export 'src/builder.dart' show fluttorchBuilder;
+export 'src/emitter.dart' show emit;
 export 'src/generator.dart';
+export 'src/names.dart';
