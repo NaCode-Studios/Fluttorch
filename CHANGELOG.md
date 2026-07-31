@@ -9,6 +9,10 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.3.0] - 2026-07-31
+
 Tier 3, the parity gate. The goldens captured at export now replay against a loaded
 model and fail the build when the numbers have moved too far.
 
@@ -59,6 +63,12 @@ model and fail the build when the numbers have moved too far.
   only against bundles written to test it. What stands in for a backend is a model that
   replays the recorded outputs, which cannot drift and therefore proves nothing about a
   device; what it does prove is the half of the gate that lives in Dart.
+- `fluttorch`, `fluttorch_gen` and `fluttorch_test` are prepared for pub.dev: each carries
+  its own licence, package page and changelog pointer, and every package in the repository
+  now shares the repository's version instead of sitting at `0.0.1-dev`.
+  `fluttorch_executorch` is deliberately held back, because its whole public surface throws
+  `UnimplementedError` and a pub.dev page cannot be withdrawn once it exists. It is
+  published in the release where it loads a model, which is M20.
 - 177 Dart tests across four packages.
 
 ## [0.2.0] - 2026-07-31
@@ -208,7 +218,8 @@ user can invoke yet, which is what `0.0.1` says that a minor would overstate.
   needs neither `torch` nor `executorch`.
 - 109 tests: 90 Dart across three packages, 19 Python.
 
-[Unreleased]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.0.1...v0.1.0
 [0.0.1]: https://github.com/NaCode-Studios/Fluttorch/releases/tag/v0.0.1

@@ -48,11 +48,12 @@ exported with `torch.export` and makes the boundary between Python and Dart type
 workflow that runs the gate on every pull request is in
 [`docs/ci-parity-gate.md`](docs/ci-parity-gate.md).
 
-> **Status — `0.2.0`, early development.** The loop from `torch.export` to a typed Dart API works:
-> one command produces an artifact, its manifest and its goldens, and the generated bindings make
-> handing the model the wrong tensor a compile error. The parity gate is merged and waiting for a
-> release. What none of it runs on yet is a device: `fluttorch_executorch` has nothing behind it,
-> so the gate is exercised against replayed goldens rather than against a backend.
+> **Status — `0.3.0`, early development.** The loop from `torch.export` to a typed Dart API to a
+> parity gate is complete: one command produces an artifact, its manifest and its goldens, the
+> generated bindings make handing the model the wrong tensor a compile error, and `expectParity`
+> replays the goldens and fails the build when the numbers move too far. What none of it runs on yet
+> is a device: `fluttorch_executorch` has nothing behind it, so the gate is exercised against
+> replayed goldens rather than against a backend, and that package is not published.
 > The [board](https://github.com/orgs/NaCode-Studios/projects/6) is the plan of record and tracks it
 > milestone by milestone. Until `1.0`, minor versions may break.
 
@@ -100,20 +101,21 @@ packages/fluttorch          manifest, tensor specs, drift metrics, runtime inter
 
 ## Roadmap
 
-**Shipped (`0.2.0`).** Tiers 0 to 2. The manifest schema, with a canonical Python writer and a Dart
+**Shipped (`0.3.0`).** Tiers 0 to 3. The manifest schema, with a canonical Python writer and a Dart
 reader that reproduce the same document byte for byte down to denormals and negative zero;
-`fluttorch-export`, which produces an artifact, its manifest and its goldens in one command; and
-`fluttorch_gen`, which turns that manifest into an API where the compiler rejects the wrong tensor.
+`fluttorch-export`, which produces an artifact, its manifest and its goldens in one command;
+`fluttorch_gen`, which turns that manifest into an API where the compiler rejects the wrong tensor;
+and the parity gate, which replays those goldens and fails the build with a report naming the
+tensor, the bound it broke and the backend that ran it.
 
-**Next.** The parity gate is merged and unreleased. `expectParity` replays the goldens, measures how
-far the numbers moved and fails the build with a report naming the tensor, the bound it broke and
-the backend that ran it. What it has no backend to run on is the next release's problem rather than
-the gate's.
+**Next.** Quantization recipes, and attribution of the drift they cause to the layer that caused it.
+That is also what forces the runtime question: attributing drift needs activation taps and
+deterministic execution, and the bindings the ExecuTorch backend delegates to expose neither, so the
+milestone that closes the tier is a decision about when to fork rather than whether.
 
-**Later.** Quantization recipes with per-layer drift attribution. That is what forces the runtime
-question: attributing drift needs activation taps and deterministic execution, and no existing Dart
-binding exposes either. An own `dart:ffi` binding follows, then the multi-backend parity matrix, then
-LiteRT and ONNX Runtime to make the runtime-agnostic claim measured rather than stated.
+**Later.** An own `dart:ffi` binding with deterministic execution, then the parity matrix across
+backends, then LiteRT and ONNX Runtime, which is what turns the runtime-agnostic claim into
+something measured rather than stated.
 
 The [board](https://github.com/orgs/NaCode-Studios/projects/6) carries the milestone plan and its
 exit criteria, and every tier is a [milestone](https://github.com/NaCode-Studios/Fluttorch/milestones)
