@@ -9,11 +9,55 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
 
 ## [Unreleased]
 
-Nothing yet.
+Tier 3, the parity gate. The goldens captured at export now replay against a loaded
+model and fail the build when the numbers have moved too far.
+
+### Added
+
+- `measureParity` replays every golden case against a loaded model and reports what it
+  measured (M13). Each case is handed its own inputs and compared against its own
+  reference, and the outputs a backend returns are checked against the manifest before
+  they are measured, so a backend that reorders them is reported as the defect it is
+  rather than as drift.
+- `GoldenBundle` has two implementations (M13). `MemoryGoldenBundle` is what a unit test
+  and a Flutter app use, since resolving an asset key belongs to the app. The
+  filesystem-backed `DirectoryGoldenBundle` lives in `package:fluttorch_test/io.dart`,
+  so importing the gate does not drag `dart:io` into a suite that runs on the web, and
+  `open` takes the manifest path and defaults to the `goldens/` directory the exporter
+  writes beside it. A tensor stored against a spec with one dynamic dimension has that
+  extent inferred from how many elements arrived; two dynamic dimensions are refused,
+  because a golden replayed at a shape the model never saw measures nothing.
+- `expectParity` fails a build with the report as its message (M15), naming the tensor,
+  the drift, the bound it broke and the backend that ran. A bundle with no cases fails
+  too: a gate that passes because it had nothing to check is indistinguishable from a
+  healthy model until the day it matters.
+- A copy-pasteable CI workflow in [`docs/ci-parity-gate.md`](docs/ci-parity-gate.md)
+  (M16), with the three conditions that decide whether a green run means anything and a
+  plain statement of what this repository does not yet run against a device.
+
+### Changed
+
+- A drift that only the cosine bound can see now says so (M14). The line used to print
+  the elementwise bound, which in that case names the one thing that did not fail. A
+  failing tensor also reports how many of its elements went outside the bound, beside
+  the worst one.
+- `DriftReport` carries why per-layer attribution is absent, rather than always blaming
+  the backend for offering no activation taps. A backend can have taps while the goldens
+  hold no reference activations to compare them against, and a report that blamed the
+  hardware for that would send someone looking in the wrong place. Attribution itself is
+  M18.
+
+### Internal
+
+- The gate is exercised against the export committed under `testdata/two_layer/`, not
+  only against bundles written to test it. What stands in for a backend is a model that
+  replays the recorded outputs, which cannot drift and therefore proves nothing about a
+  device; what it does prove is the half of the gate that lives in Dart.
+- 177 Dart tests across four packages.
 
 ## [0.2.0] - 2026-07-31
 
-Tier 2 — Typed bindings. A manifest now becomes a Dart API in which handing the
+Tier 2, typed bindings. A manifest now becomes a Dart API in which handing the
 model the wrong tensor is a compile error.
 
 ### Added
@@ -40,7 +84,7 @@ model the wrong tensor is a compile error.
 ### Internal
 
 - Resize and center_crop are refused rather than generated (M10). Performing either
-  means knowing which axes are spatial, and the manifest records no tensor layout —
+  means knowing which axes are spatial, and the manifest records no tensor layout, so
   NCHW and NHWC would each produce a plausible and different answer. This is a gap in
   the schema, not in the generator, and generating a guess would be worse than
   refusing.
@@ -57,7 +101,7 @@ model the wrong tensor is a compile error.
 
 ## [0.1.0] - 2026-07-30
 
-Tier 1 — The export contract. One command now produces an artifact, its manifest
+Tier 1, the export contract. One command now produces an artifact, its manifest
 and its goldens together, and the Dart side refuses an artifact that does not
 match the manifest it was handed.
 
@@ -65,7 +109,7 @@ match the manifest it was handed.
 
 - `fluttorch-export` (M5): resolves `module:factory` references, lowers through
   XNNPACK at full precision, and writes the artifact, the manifest and the goldens in
-  one command — together, because the weight hash can only catch a mismatched pair if
+  one command. Together, because the weight hash can only catch a mismatched pair if
   nothing produces one without the other.
 - `verifyArtifact` and `digestOf` (M6): the runtime refuses an artifact whose digest
   disagrees with `ModelManifest.weightHash`. An unknown hash algorithm is reported as a
@@ -80,8 +124,8 @@ match the manifest it was handed.
 ### Changed
 
 - The Python writer emits canonical JSON instead of `json.dumps` (M8). Both languages
-  write the shortest round-trip decimal and then spell it differently — switching to
-  exponential notation at different magnitudes, padding the exponent differently — and
+  write the shortest round-trip decimal and then spell it differently, switching to
+  exponential notation at different magnitudes and padding the exponent differently, and
   Python escaped non-ASCII where Dart does not. Python is the only writer in the
   pipeline, so it matches the reader.
 
@@ -99,11 +143,11 @@ match the manifest it was handed.
   verified only against documents written to test it is verified against itself.
 - The export suite is skipped where `torch` is absent, which includes CI. That coverage
   is documented as not run there rather than implied by a green badge.
-- 194 tests locally — 117 Dart, 77 Python. CI runs 117 and 56.
+- 194 tests locally: 117 Dart, 77 Python. CI runs 117 and 56.
 
 ## [0.0.1] - 2026-07-30
 
-Tier 0 — Foundations. Decisions, a contract and a set of semantics; no feature a
+Tier 0, foundations. Decisions, a contract and a set of semantics; no feature a
 user can invoke yet, which is what `0.0.1` says that a minor would overstate.
 
 ### Added
@@ -118,7 +162,7 @@ user can invoke yet, which is what `0.0.1` says that a minor would overstate.
   allocate and copy on both sides of every call.
 - Tolerance semantics (M4): elementwise bounds combine as `atol + rtol × |reference|`, cosine is
   checked per tensor, and `Tolerance.startingPointFor` gives a documented starting point per
-  quantization recipe — returning null for a recipe it does not recognise.
+  quantization recipe, returning null for a recipe it does not recognise.
 - A sealed `FluttorchException` hierarchy: wrong artifact, unreadable manifest, bad buffer, absent
   backend and absent capability are five different problems and no longer share one type.
 - `checkGeneratable` refuses a manifest whose preprocessing this build does not understand, rather
@@ -137,8 +181,8 @@ user can invoke yet, which is what `0.0.1` says that a minor would overstate.
 ### Fixed
 
 - `Tolerance.maxRelative` was declared and never read, so a tolerance configured with only a relative
-  bound accepted every output — a gate that failed open. A tolerance with no bound configured is now
-  a constructor error, and a NaN where a number was expected fails however wide the bound.
+  bound accepted every output. That is a gate that fails open. A tolerance with no bound configured is
+  now a constructor error, and a NaN where a number was expected fails however wide the bound.
 - `TensorSpec.elementCount` inferred a nullable accumulator from its return type, making the
   multiplication an unchecked use of a nullable value.
 - `fluttorch_gen` no longer declares a `build_runner` builder factory that throws, which turned
@@ -146,14 +190,14 @@ user can invoke yet, which is what `0.0.1` says that a minor would overstate.
 
 ### Internal
 
-- M2: the pipeline runs end to end — a two-layer model exported, loaded on macOS through
+- M2: the pipeline runs end to end. A two-layer model exported, loaded on macOS through
   `executorch_flutter`, and its output within 2.98e-8 of the PyTorch reference. It also established
   that `executorch_flutter` requires macOS 11.0, which a freshly generated Flutter project does not
   meet.
-- M1: audited `executorch_flutter` 0.5.0. None of the four hooks the parity gate needs — activation
-  taps, deterministic execution, load-time backend selection, caller-supplied output buffers — exist
-  in its public API. Recorded on the [board](https://github.com/orgs/NaCode-Studios/projects/6); the consequence is that M19 becomes a
-  question of when to fork rather than whether.
+- M1: audited `executorch_flutter` 0.5.0. The parity gate needs four hooks, and none of them exists
+  in its public API: activation taps, deterministic execution, load-time backend selection, and
+  caller-supplied output buffers. Recorded on the [board](https://github.com/orgs/NaCode-Studios/projects/6);
+  the consequence is that M19 becomes a question of when to fork rather than whether.
 - CI runs every Dart package's suite rather than only the core, and the Python manifest suite, which
   needs neither `torch` nor `executorch`.
 - 109 tests: 90 Dart across three packages, 19 Python.
