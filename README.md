@@ -7,6 +7,7 @@
 **Ship PyTorch models to Flutter, and prove the numbers didn't change.**
 
 [![CI](https://github.com/NaCode-Studios/Fluttorch/actions/workflows/ci.yaml/badge.svg)](https://github.com/NaCode-Studios/Fluttorch/actions/workflows/ci.yaml)
+[![pub.dev](https://img.shields.io/pub/v/fluttorch?label=pub.dev&labelColor=100E0C&color=0553B1)](https://pub.dev/packages/fluttorch)
 [![License](https://img.shields.io/badge/license-Apache%202.0-23201C?labelColor=100E0C)](LICENSE)
 [![Dart](https://img.shields.io/badge/Dart-3.9-0553B1?logo=dart&logoColor=white&labelColor=100E0C)](https://dart.dev)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.6-EE4C2C?logo=pytorch&logoColor=white&labelColor=100E0C)](https://pytorch.org)
@@ -79,6 +80,31 @@ execute deterministically is a property of the hardware, not of the build. Per-l
 attribution depends on both, so they are declared capabilities that code degrades around, and a
 report always says which backend produced it.
 
+## Installation
+
+```yaml
+dependencies:
+  fluttorch: ^0.3.0
+
+dev_dependencies:
+  build_runner: ^2.4.0
+  fluttorch_gen: ^0.3.0
+  fluttorch_test: ^0.3.0
+```
+
+The generator and the gate are `dev_dependencies`: neither runs in a shipped app, and an app that
+carried the drift metrics into production would be paying for something it cannot use there.
+
+The exporter is the Python half and is installed from this repository, since it is a command rather
+than a library:
+
+```bash
+pip install 'git+https://github.com/NaCode-Studios/Fluttorch.git#subdirectory=python/fluttorch_export'
+```
+
+Nothing here executes a model yet. `fluttorch_executorch` is in the repository and unpublished,
+because everything it implements currently throws.
+
 ## Architecture
 
 ```
@@ -93,10 +119,10 @@ packages/fluttorch          manifest, tensor specs, drift metrics, runtime inter
 
 | Package | Role |
 | --- | --- |
-| `fluttorch` | The contract and the seam. No backend may be imported here. |
-| `fluttorch_gen` | `build_runner` builder: `*.fluttorch.json` → `*.fluttorch.dart`. |
-| `fluttorch_test` | Replays the goldens, measures drift, fails the build. |
-| `fluttorch_executorch` | ExecuTorch backend. LiteRT and ONNX Runtime are planned. |
+| [`fluttorch`](https://pub.dev/packages/fluttorch) | The contract and the seam. No backend may be imported here. |
+| [`fluttorch_gen`](https://pub.dev/packages/fluttorch_gen) | `build_runner` builder: `*.fluttorch.json` → `*.fluttorch.dart`. |
+| [`fluttorch_test`](https://pub.dev/packages/fluttorch_test) | Replays the goldens, measures drift, fails the build. |
+| `fluttorch_executorch` | ExecuTorch backend, unpublished until it loads a model. LiteRT and ONNX Runtime are planned. |
 | `fluttorch-export` (Python) | Emits the artifact, the manifest and the goldens together. |
 
 ## Roadmap
