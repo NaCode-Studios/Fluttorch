@@ -44,9 +44,10 @@ FAIL  parity/solar_forecast
 Fluttorch does not train models, convert between formats, or serve inference. It takes a model you
 exported with `torch.export` and makes the boundary between Python and Dart typed and verified.
 
-> **Status — `0.1.0`, early development.** `fluttorch-export` works: one command produces an
-> artifact, its manifest and its goldens, and the Dart side refuses an artifact that does not match
-> the manifest it was handed. What does not exist yet is the typed API — that is Tier 2.
+> **Status — `0.2.0`, early development.** The loop from `torch.export` to a typed Dart API works:
+> one command produces an artifact, its manifest and its goldens, and the generated bindings make
+> handing the model the wrong tensor a compile error. What does not exist yet is the parity gate
+> itself — that is Tier 3.
 > The [board](https://github.com/orgs/NaCode-Studios/projects/6) is the plan of record and tracks it milestone by milestone. Until
 > `1.0`, minor versions may break.
 
@@ -93,13 +94,13 @@ packages/fluttorch          manifest, tensor specs, drift metrics, runtime inter
 
 ## Roadmap
 
-**Shipped (`0.1.0`)** — Tier 0 and Tier 1. The manifest schema, with a canonical Python writer and a
-Dart reader that reproduce the same document byte for byte down to denormals and negative zero; the
-tensor and tolerance semantics the gate is built on; and `fluttorch-export`, which produces an
-artifact, its manifest and its goldens in one command.
+**Shipped (`0.2.0`)** — Tiers 0 to 2. The manifest schema, with a canonical Python writer and a Dart
+reader that reproduce the same document byte for byte down to denormals and negative zero;
+`fluttorch-export`, which produces an artifact, its manifest and its goldens in one command; and
+`fluttorch_gen`, which turns that manifest into an API where the compiler rejects the wrong tensor.
 
-**Next** — typed codegen from the manifest, then the parity gate over final outputs. Those two make
-the loop usable end to end on XNNPACK.
+**Next** — the parity gate over final outputs: replaying the goldens on device, measuring the drift,
+and failing the build when it is too large. That is the milestone the rest of this exists to serve.
 
 **Later** — quantization recipes with per-layer drift attribution. That is what forces the runtime
 question: attributing drift needs activation taps and deterministic execution, and no existing Dart
