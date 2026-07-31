@@ -1,0 +1,50 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  # The same checks as every pull request, called rather than copied: two lists
+  # of test commands drift the moment a package is added to one of them. v0.0.1
+  # was cut on a red commit because the check was assumed rather than run, so a
+  # tag proves it here instead of a checklist asking someone to look.
+  verify:
+    uses: ./.github/workflows/ci.yaml
+
+  release:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      # The default read cannot create a release.
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      # Tags do not populate the Releases panel, so a repository with tags and
+      # no Release objects reads as one that has never shipped. The body is
+      # extracted from CHANGELOG.md and never written by hand: a release note
+      # composed separately is a second copy of what the changelog owns, and it
+      # will eventually disagree with it.
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          awk -v head="## [$VERSION]" '
+            index($0, head) == 1     { found = 1; next }
+            found && /^## \[/        { exit }
+            # The oldest section is followed by the compare links rather than by
+            # another heading, so it needs its own terminator or the release
+            # notes end in a list of URLs.
+            found && /^\[[^]]+\]: /  { exit }
+            found                    { print }
+          ' CHANGELOG.md > notes.md
+          # An empty body means the tag and the changelog disagree about what
+          # this version is. Fail rather than publish a blank release, which is
+          # the drift this arrangement exists to prevent.
+          [ -s notes.md ] || { echo "::error::no CHANGELOG.md section for $VERSION"; exit 1; }
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md

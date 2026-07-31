@@ -49,6 +49,12 @@ model and fail the build when the numbers have moved too far.
 
 ### Internal
 
+- `release.yaml` creates the GitHub Release for a tag, with the body extracted from this
+  file rather than written by hand. Tags do not populate the Releases panel, so `v0.0.1`
+  and `v0.1.0` left it empty, which reads as a library that has never shipped. It calls
+  `ci.yaml` rather than restating its job list, so the gate a tag passes is the one every
+  pull request passes: `v0.0.1` was originally cut on a red commit because that check was
+  a line in a checklist instead of a job.
 - The gate is exercised against the export committed under `testdata/two_layer/`, not
   only against bundles written to test it. What stands in for a backend is a model that
   replays the recorded outputs, which cannot drift and therefore proves nothing about a

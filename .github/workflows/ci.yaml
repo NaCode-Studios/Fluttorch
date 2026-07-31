@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # release.yaml calls this rather than restating the job list, so the gate a
+  # tag has to pass is the same one every pull request passes, by construction.
+  workflow_call:
 
 jobs:
   dart:
