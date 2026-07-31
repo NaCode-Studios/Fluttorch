@@ -1,8 +1,17 @@
 name: fluttorch_gen
 description: Generates a typed Dart API from a Fluttorch model manifest, so shapes, dtypes and preprocessing cannot drift from the training pipeline.
-version: 0.0.1-dev
+version: 0.3.0
 repository: https://github.com/NaCode-Studios/Fluttorch
-publish_to: none
+homepage: https://nacodestudios.it/en/project/fluttorch
+issue_tracker: https://github.com/NaCode-Studios/Fluttorch/issues
+funding:
+  - https://github.com/sponsors/NaCode-Studios
+
+topics:
+  - pytorch
+  - code-generation
+  - build-runner
+  - on-device
 
 environment:
   sdk: ^3.9.0
@@ -15,7 +24,7 @@ dependencies:
   # so generated code needs no formatting pass and a golden cannot drift from the
   # emitter over whitespace.
   dart_style: ^3.0.0
-  fluttorch: ^0.0.1-dev
+  fluttorch: ^0.3.0
   pub_semver: ^2.1.0
 
 dev_dependencies:
