@@ -1,6 +1,6 @@
 name: fluttorch_test
 description: Numerical parity gates for on-device models. Replays export-time goldens and fails CI when the on-device output drifts from the reference.
-version: 0.3.0
+version: 0.4.0
 repository: https://github.com/NaCode-Studios/Fluttorch
 homepage: https://nacodestudios.it/en/project/fluttorch
 issue_tracker: https://github.com/NaCode-Studios/Fluttorch/issues
@@ -19,7 +19,7 @@ environment:
 resolution: workspace
 
 dependencies:
-  fluttorch: ^0.3.0
+  fluttorch: ^0.4.0
   test: ^1.25.0
 
 dev_dependencies:
