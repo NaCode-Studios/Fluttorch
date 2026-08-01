@@ -49,13 +49,13 @@ exported with `torch.export` and makes the boundary between Python and Dart type
 workflow that runs the gate on every pull request is in
 [`docs/ci-parity-gate.md`](docs/ci-parity-gate.md).
 
-> **Status — `0.3.0`, early development.** The loop from `torch.export` to a typed Dart API to a
-> parity gate is complete: one command produces an artifact, its manifest and its goldens, the
-> generated bindings make handing the model the wrong tensor a compile error, and `expectParity`
-> replays the goldens and fails the build when the numbers move too far. Quantization recipes and
-> per-layer attribution are merged and unreleased. What none of it runs on yet is a device:
-> `fluttorch_executorch` has nothing behind it, so the gate is exercised against replayed goldens
-> rather than against a backend, and that package is not published.
+> **Status — `0.4.0`, early development.** The loop from `torch.export` to a typed Dart API to a
+> parity gate is complete, and an export can be quantized: one command produces an artifact, its
+> manifest and its goldens, the generated bindings make handing the model the wrong tensor a compile
+> error, and `expectParity` replays the goldens and names the earliest layer whose numbers moved.
+> What none of it runs on yet is a device: `fluttorch_executorch` has nothing behind it, so the gate
+> is exercised against replayed goldens rather than against a backend, and that package is not
+> published.
 > The [board](https://github.com/orgs/NaCode-Studios/projects/6) is the plan of record and tracks it
 > milestone by milestone. Until `1.0`, minor versions may break.
 
@@ -85,12 +85,12 @@ report always says which backend produced it.
 
 ```yaml
 dependencies:
-  fluttorch: ^0.3.0
+  fluttorch: ^0.4.0
 
 dev_dependencies:
   build_runner: ^2.4.0
-  fluttorch_gen: ^0.3.0
-  fluttorch_test: ^0.3.0
+  fluttorch_gen: ^0.4.0
+  fluttorch_test: ^0.4.0
 ```
 
 The generator and the gate are `dev_dependencies`: neither runs in a shipped app, and an app that
@@ -137,12 +137,13 @@ packages/fluttorch          manifest, tensor specs, drift metrics, runtime inter
 
 ## Roadmap
 
-**Shipped (`0.3.0`).** Tiers 0 to 3. The manifest schema, with a canonical Python writer and a Dart
+**Shipped (`0.4.0`).** Tiers 0 to 4. The manifest schema, with a canonical Python writer and a Dart
 reader that reproduce the same document byte for byte down to denormals and negative zero;
-`fluttorch-export`, which produces an artifact, its manifest and its goldens in one command;
-`fluttorch_gen`, which turns that manifest into an API where the compiler rejects the wrong tensor;
-and the parity gate, which replays those goldens and fails the build with a report naming the
-tensor, the bound it broke and the backend that ran it.
+`fluttorch-export`, which produces an artifact, its manifest and its goldens in one command, and
+quantizes it on request; `fluttorch_gen`, which turns that manifest into an API where the compiler
+rejects the wrong tensor; and the parity gate, which replays those goldens, fails the build with a
+report naming the tensor, the bound it broke and the backend that ran it, and where the export
+captured taps also names the earliest layer whose numbers moved.
 
 **Next.** The runtime. Attribution, the parity matrix and `runInto` all need hooks no published
 Dart binding exposes, so the four are proposed upstream first and Fluttorch writes its own

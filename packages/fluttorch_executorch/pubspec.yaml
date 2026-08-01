@@ -1,6 +1,6 @@
 name: fluttorch_executorch
 description: ExecuTorch backend for Fluttorch. Runs exported PyTorch models on device behind the runtime-agnostic Fluttorch interface.
-version: 0.3.0
+version: 0.4.0
 repository: https://github.com/NaCode-Studios/Fluttorch
 publish_to: none
 
@@ -10,7 +10,7 @@ environment:
 resolution: workspace
 
 dependencies:
-  fluttorch: ^0.3.0
+  fluttorch: ^0.4.0
 
 dev_dependencies:
   lints: ^6.0.0
