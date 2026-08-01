@@ -9,11 +9,12 @@ import 'tolerance.dart';
 
 /// Replays every golden against [model] and returns one report per case.
 ///
-/// Compares final outputs, which on today's backends is everything that is
-/// reachable. Attributing drift to a layer needs the activations the source
-/// model produced, which the manifest does not record yet, so every report says
-/// that it compared outputs only rather than leaving the absence of an
-/// attribution to be read as agreement.
+/// Compares final outputs, and where the export captured taps and the backend
+/// offers them, also walks the intermediate activations in graph order and names
+/// the earliest layer whose numbers moved. Both conditions are required and
+/// neither is assumed: a report that could not look says which of the two was
+/// missing, rather than leaving the absence of an attribution to be read as
+/// agreement.
 ///
 /// [tolerance] defaults to [Tolerance.startingPointFor] on the manifest's
 /// quantization recipe. That returns null for a recipe this build does not
@@ -137,7 +138,28 @@ Future<DriftReport> _replay(
       await goldens.tensor(golden.inputKeys[i], manifest.inputs[i]),
   ];
 
-  final produced = await model.run(inputs);
+  // Taps exist in a manifest only because someone asked for them at export, so
+  // the cost of capturing them was accepted there. Running with them from the
+  // start rather than re-running a failure keeps the activations and the outputs
+  // from the same inference, which on a backend that cannot promise determinism
+  // is the difference between attribution and a second opinion.
+  final wanted =
+      manifest.activations.isNotEmpty && golden.activationKeys.isNotEmpty;
+  final tapped = wanted && model.capabilities.supportsActivationTaps;
+
+  final List<Tensor> produced;
+  var activations = const <String, Tensor>{};
+  if (tapped) {
+    final run = await model.runWithTaps(
+      inputs,
+      layers: [for (final spec in manifest.activations) spec.name],
+    );
+    produced = run.outputs;
+    activations = run.activations;
+  } else {
+    produced = await model.run(inputs);
+  }
+
   // The backend is checked against the contract like any other caller. A
   // backend that returns the outputs in a different order would otherwise be
   // measured against the wrong references and reported as drift.
@@ -157,14 +179,91 @@ Future<DriftReport> _replay(
     );
   }
 
+  final attribution = tapped
+      ? await _attribute(manifest, golden, goldens, activations, tolerance)
+      : _Attribution.unavailable(
+          wanted
+              ? 'backend "${model.backend}" offers no activation taps'
+              : 'the goldens record final outputs only',
+        );
+
   return DriftReport(
     goldenId: golden.id,
     backend: model.backend,
     quantization: manifest.quantization,
     tensors: drifts,
-    attributionUnavailable: model.capabilities.supportsActivationTaps
-        ? 'the goldens record final outputs only'
-        : null,
+    layers: attribution.layers,
+    firstDivergentLayer: attribution.firstDivergent,
+    attributionAttempted: attribution.attempted,
+    attributionUnavailable: attribution.reason,
+  );
+}
+
+/// What walking the tapped layers established, or why it could not.
+final class _Attribution {
+  const _Attribution({
+    required this.layers,
+    required this.firstDivergent,
+    required this.attempted,
+    this.reason,
+  });
+
+  factory _Attribution.unavailable(String reason) => _Attribution(
+    layers: const [],
+    firstDivergent: null,
+    attempted: false,
+    reason: reason,
+  );
+
+  final List<TensorDrift> layers;
+  final String? firstDivergent;
+  final bool attempted;
+  final String? reason;
+}
+
+/// Walks the declared activations in graph order and names the first that moved.
+///
+/// Measured against the same tolerance as the outputs. A separate bound for
+/// intermediates would be a second number nobody has measured, and the question
+/// here is which layer went first rather than whether a layer is acceptable on
+/// its own.
+Future<_Attribution> _attribute(
+  ModelManifest manifest,
+  GoldenCase golden,
+  GoldenBundle goldens,
+  Map<String, Tensor> activations,
+  Tolerance tolerance,
+) async {
+  final layers = <TensorDrift>[];
+  String? firstDivergent;
+
+  for (var i = 0; i < manifest.activations.length; i++) {
+    final spec = manifest.activations[i];
+    final actual = activations[spec.name];
+    if (actual == null) {
+      // A layer the backend did not tap is a hole in the sequence, and a hole
+      // reads exactly like a layer that agreed. Anything found before it is
+      // still the earliest divergence; anything after it is unknowable, so the
+      // answer is either what we already have or nothing.
+      if (firstDivergent != null) break;
+      return _Attribution.unavailable(
+        'the run returned no activation for "${spec.name}", so no layer after '
+        'it can be ruled out',
+      );
+    }
+    final drift = measureDrift(
+      actual: actual,
+      reference: await goldens.tensor(golden.activationKeys[i], spec),
+      tolerance: tolerance,
+    );
+    layers.add(drift);
+    if (!drift.passes && firstDivergent == null) firstDivergent = spec.name;
+  }
+
+  return _Attribution(
+    layers: layers,
+    firstDivergent: firstDivergent,
+    attempted: true,
   );
 }
 

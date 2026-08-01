@@ -103,12 +103,26 @@ final class FakeModel implements LoadedModel {
     required List<Tensor> outputs,
   }) => throw UnimplementedError('the gate replays through run');
 
+  /// What [runWithTaps] answers with, by layer name.
+  ///
+  /// A layer absent from this map is one the backend does not tap, which is a
+  /// different thing from one that agreed and is what the gate has to tell
+  /// apart.
+  Map<String, Tensor> taps = const {};
+
   @override
-  Future<TappedRun> runWithTaps(List<Tensor> inputs, {List<String>? layers}) =>
+  Future<TappedRun> runWithTaps(
+    List<Tensor> inputs, {
+    List<String>? layers,
+  }) async {
+    if (!capabilities.supportsActivationTaps) {
       throw CapabilityUnavailableException(
         backend: backend,
         capability: 'activation taps',
       );
+    }
+    return TappedRun(outputs: await run(inputs), activations: taps);
+  }
 
   @override
   Future<void> dispose() async {}

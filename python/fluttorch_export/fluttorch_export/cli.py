@@ -26,6 +26,7 @@ import sys
 
 from .export import ExportError, export_model, resolve
 from .manifest import ManifestError
+from .quantization import RECIPES, QuantizationError
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -59,8 +60,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--quantize",
-        help="quantization recipe. Not available until M17; naming one fails "
-        "rather than exporting full precision under a name that says otherwise.",
+        help="quantization recipe: " + ", ".join(sorted(RECIPES)) + ". The name is "
+        "written into the manifest and selects the tolerance the parity gate "
+        "starts from, so it describes the artifact rather than labelling it.",
+    )
+    parser.add_argument(
+        "--taps",
+        help="comma-separated submodules whose outputs are captured alongside "
+        "each golden, so a drift can be attributed to the layer that caused it. "
+        "Off by default: an intermediate is as large as the tensor it carries.",
     )
     return parser
 
@@ -71,15 +79,6 @@ def _names(raw: str | None) -> list[str] | None:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-
-    if args.quantize:
-        print(
-            f"fluttorch-export: --quantize {args.quantize!r} is not available yet "
-            "(M17). Exporting full precision under a quantized name would put a "
-            "recipe in the manifest that the artifact does not match.",
-            file=sys.stderr,
-        )
-        return 2
 
     out = pathlib.Path(args.out)
     name = args.name or out.name
@@ -96,8 +95,10 @@ def main(argv: list[str] | None = None) -> int:
             input_names=_names(args.input_names),
             output_names=_names(args.output_names),
             dynamic_batch=args.dynamic_batch,
+            quantization=args.quantize,
+            taps=_names(args.taps),
         )
-    except (ExportError, ManifestError) as e:
+    except (ExportError, ManifestError, QuantizationError) as e:
         print(f"fluttorch-export: {e}", file=sys.stderr)
         return 1
 
@@ -107,7 +108,15 @@ def main(argv: list[str] | None = None) -> int:
     print(f"weight hash  {m.weight_hash}")
     print(f"inputs       {', '.join(f'{s.name}:{s.dtype}{list(s.shape)}' for s in m.inputs)}")
     print(f"outputs      {', '.join(f'{s.name}:{s.dtype}{list(s.shape)}' for s in m.outputs)}")
+    print(f"quantization {m.quantization or 'none, full precision'}")
     print(f"goldens      {result.golden_count} case(s) in {result.golden_dir}")
+    if m.activations:
+        print(f"taps         {', '.join(s.name for s in m.activations)}")
+    else:
+        print(
+            "taps         none. A failing gate will name the output that moved, "
+            "not the layer that moved it."
+        )
     if args.goldens is None:
         print(
             "\nOnly the example input was captured. One case proves the pipeline "

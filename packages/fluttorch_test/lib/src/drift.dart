@@ -113,6 +113,7 @@ final class DriftReport {
     this.firstDivergentLayer,
     this.attributionAttempted = false,
     this.attributionUnavailable,
+    this.layers = const [],
   });
 
   final String goldenId;
@@ -134,6 +135,13 @@ final class DriftReport {
 
   /// Whether per-layer attribution was possible on this run.
   final bool attributionAttempted;
+
+  /// Drift measured at each tapped layer, in the order the graph produces them.
+  ///
+  /// Empty when nothing was tapped. The order is what makes
+  /// [firstDivergentLayer] a claim rather than a pick: it is the first entry
+  /// here that failed, and everything before it agreed with the reference.
+  final List<TensorDrift> layers;
 
   /// Why attribution was not possible, when [attributionAttempted] is false.
   ///
@@ -167,7 +175,21 @@ final class DriftReport {
     }
     if (!passes) {
       if (firstDivergentLayer != null) {
-        b.writeln('      first divergence: layer $firstDivergentLayer');
+        final layer = layers.firstWhere(
+          (l) => l.tensorName == firstDivergentLayer,
+          orElse: () => tensors.first,
+        );
+        b
+          ..writeln('      first divergence: layer $firstDivergentLayer')
+          ..writeln(
+            '        max |Δ| ${layer.maxAbsolute.toStringAsPrecision(3)} '
+            'after ${layers.indexOf(layer)} layer(s) inside tolerance',
+          );
+      } else if (attributionAttempted) {
+        b.writeln(
+          '      no layer diverged: the ${layers.length} tapped layer(s) all '
+          'stayed inside tolerance, so the drift accumulated below them',
+        );
       } else if (!attributionAttempted) {
         b.writeln(
           '      no layer attribution: '

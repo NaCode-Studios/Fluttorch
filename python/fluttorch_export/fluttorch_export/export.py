@@ -32,6 +32,7 @@ from .manifest import (
     PreprocessingStep,
     TensorSpec,
 )
+from .quantization import Recipe, check_calibration, quantizer_for, recipe_for
 
 #: torch dtype to the manifest's wire name. Deliberately not exhaustive over
 #: torch's dtypes: a type absent here is one the contract cannot describe, and
@@ -127,8 +128,14 @@ def _specs(
     return tuple(out)
 
 
-def _lower(model: torch.nn.Module, example: tuple[torch.Tensor, ...], backend: str) -> bytes:
-    """Trace, lower and serialise. Full precision only until M17."""
+def _lower(
+    model: torch.nn.Module,
+    example: tuple[torch.Tensor, ...],
+    backend: str,
+    recipe: Recipe | None = None,
+    calibration: Sequence[tuple[torch.Tensor, ...]] = (),
+) -> bytes:
+    """Trace, quantize if a recipe was named, lower and serialise."""
     if backend != "xnnpack":
         raise ExportError(
             f"backend {backend!r} is not available yet; M21 adds Core ML and "
@@ -140,6 +147,20 @@ def _lower(model: torch.nn.Module, example: tuple[torch.Tensor, ...], backend: s
     from executorch.exir import to_edge_transform_and_lower
 
     exported = torch.export.export(model, example)
+
+    if recipe is not None:
+        from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+
+        graph = prepare_pt2e(exported.module(), quantizer_for(recipe))
+        # Observers only see what they are run over. A static recipe fixes every
+        # activation range here, from these inputs and nothing else, which is why
+        # an export with nothing representative to calibrate on is refused
+        # earlier rather than quantized against its own example input.
+        with torch.no_grad():
+            for case in calibration:
+                graph(*case)
+        exported = torch.export.export(convert_pt2e(graph), example)
+
     lowered = to_edge_transform_and_lower(
         exported, partitioner=[XnnpackPartitioner()]
     ).to_executorch()
@@ -159,6 +180,8 @@ def export_model(
     input_names: Sequence[str] | None = None,
     output_names: Sequence[str] | None = None,
     dynamic_batch: bool = False,
+    quantization: str | None = None,
+    taps: Sequence[str] | None = None,
 ) -> ExportResult:
     """Export ``model``, and write the artifact, the manifest and the goldens.
 
@@ -166,6 +189,15 @@ def export_model(
     absent only ``example_inputs`` is captured, which is a smoke test rather than
     coverage — the exporter says so rather than inventing a distribution it has
     no way to know.
+
+    ``quantization`` names a recipe from ``quantization.RECIPES``. A static recipe
+    also calibrates on those same golden inputs, which is why they are resolved
+    before the model is lowered rather than after.
+
+    ``taps`` names submodules whose outputs are captured alongside each golden, so
+    the gate can attribute a drift to the layer that caused it instead of only
+    reporting the output that was wrong. Off by default: an intermediate is as
+    large as the tensor it carries, and on a real model taps multiply the bundle.
     """
     model = model.eval()
     example = _as_tuple(example_inputs)
@@ -176,7 +208,13 @@ def export_model(
     inputs = _specs(example, "input", input_names, dynamic_batch)
     outputs = _specs(reference, "output", output_names, dynamic_batch)
 
-    buffer = _lower(model, example, backend)
+    cases_in = _golden_inputs(golden_inputs, example, inputs)
+
+    recipe = recipe_for(quantization) if quantization else None
+    if recipe is not None:
+        check_calibration(recipe, cases_in)
+
+    buffer = _lower(model, example, backend, recipe=recipe, calibration=cases_in)
 
     out_dir = pathlib.Path(out_dir)
     golden_dir = out_dir / "goldens"
@@ -185,12 +223,15 @@ def export_model(
     artifact = out_dir / f"{name}.pte"
     artifact.write_bytes(buffer)
 
+    taps = tuple(taps or ())
+    activations = _tap_specs(model, taps, cases_in[0], dynamic_batch)
+
     cases = _capture_goldens(
         model=model,
-        example=example,
-        golden_inputs=golden_inputs,
+        cases_in=cases_in,
         inputs=inputs,
         outputs=outputs,
+        activations=activations,
         golden_dir=golden_dir,
     )
 
@@ -199,9 +240,11 @@ def export_model(
         weight_hash="sha256:" + hashlib.sha256(buffer).hexdigest(),
         inputs=inputs,
         outputs=outputs,
+        quantization=quantization,
         preprocessing=tuple(preprocessing),
         labels=tuple(labels) if labels is not None else None,
         goldens=cases,
+        activations=activations,
     )
 
     manifest_path = out_dir / f"{name}.fluttorch.json"
@@ -210,13 +253,127 @@ def export_model(
     return ExportResult(artifact, manifest_path, golden_dir, manifest)
 
 
+def _golden_inputs(
+    golden_inputs: Iterable[Any] | Callable[[], Iterable[Any]] | None,
+    example: tuple[torch.Tensor, ...],
+    inputs: tuple[TensorSpec, ...],
+) -> list[tuple[torch.Tensor, ...]]:
+    """The input tuples to capture references for, validated against the model.
+
+    Resolved before lowering because a static quantization recipe calibrates on
+    exactly these, and calibrating on something other than what the goldens then
+    measure would make the gate judge a model against inputs it was not tuned for.
+    """
+    if golden_inputs is None:
+        cases: list[tuple[torch.Tensor, ...]] = [example]
+    else:
+        raw = golden_inputs() if callable(golden_inputs) else golden_inputs
+        cases = [_as_tuple(c) for c in raw]
+        if not cases:
+            raise ExportError(
+                "golden_inputs yielded nothing; omit it to capture the example "
+                "input alone rather than passing an empty iterable"
+            )
+    for index, case in enumerate(cases):
+        if len(case) != len(inputs):
+            raise ExportError(
+                f"golden {index} has {len(case)} inputs; the model takes {len(inputs)}"
+            )
+    return cases
+
+
+def _tap_specs(
+    model: torch.nn.Module,
+    taps: tuple[str, ...],
+    probe: tuple[torch.Tensor, ...],
+    dynamic_batch: bool,
+) -> tuple[TensorSpec, ...]:
+    """Declare what each tapped submodule produces, by running the model once.
+
+    Observed rather than inferred, for the same reason the output specs are: the
+    shape a layer emits is a fact about the model and reading it off the graph
+    would be a guess that happens to be right most of the time.
+
+    The order is the order the modules run, which is what makes "the earliest
+    layer that diverged" a meaningful claim on the device.
+    """
+    if not taps:
+        return ()
+
+    known = {name for name, _ in model.named_modules() if name}
+    missing = [t for t in taps if t not in known]
+    if missing:
+        raise ExportError(
+            f"no submodule named {', '.join(repr(m) for m in missing)}; this model "
+            f"has {', '.join(sorted(known)) or 'no named submodules'}"
+        )
+
+    _, captured = _run_with_taps(model, taps, probe)
+    specs = []
+    for i, name in enumerate(taps):
+        tensor = captured[name]
+        shape = list(tensor.shape)
+        if dynamic_batch and shape:
+            shape[0] = DYNAMIC_DIM
+        specs.append(TensorSpec(name, _wire_dtype(tensor, "activation", i), tuple(shape)))
+    return tuple(specs)
+
+
+def _run_with_taps(
+    model: torch.nn.Module,
+    taps: tuple[str, ...],
+    case: tuple[torch.Tensor, ...],
+) -> tuple[tuple[torch.Tensor, ...], dict[str, torch.Tensor]]:
+    """Run ``case`` once and return both its outputs and what each tap produced.
+
+    One pass rather than two: a second forward for the outputs would double the
+    cost of every golden on a real model, and on a model with any nondeterminism
+    it would compare activations against outputs from a different run.
+
+    A tap whose module returns something other than a tensor is refused rather
+    than skipped: silently dropping it would leave a hole in the sequence the
+    device side walks, and a hole reads as a layer that agreed.
+    """
+    captured: dict[str, torch.Tensor] = {}
+    handles = []
+
+    def hook(name: str):
+        def record(_module, _args, output):
+            if not isinstance(output, torch.Tensor):
+                raise ExportError(
+                    f"submodule {name!r} returns {type(output).__name__}, which has no "
+                    "single tensor to compare against on the device"
+                )
+            captured[name] = output.detach()
+
+        return record
+
+    modules = dict(model.named_modules())
+    try:
+        for name in taps:
+            handles.append(modules[name].register_forward_hook(hook(name)))
+        with torch.no_grad():
+            produced = _as_tuple(model(*case))
+    finally:
+        for h in handles:
+            h.remove()
+
+    absent = [t for t in taps if t not in captured]
+    if absent:
+        raise ExportError(
+            f"submodule(s) {', '.join(repr(a) for a in absent)} did not run on this "
+            "input, so there is no activation to record for them"
+        )
+    return produced, captured
+
+
 def _capture_goldens(
     *,
     model: torch.nn.Module,
-    example: tuple[torch.Tensor, ...],
-    golden_inputs: Iterable[Any] | Callable[[], Iterable[Any]] | None,
+    cases_in: list[tuple[torch.Tensor, ...]],
     inputs: tuple[TensorSpec, ...],
     outputs: tuple[TensorSpec, ...],
+    activations: tuple[TensorSpec, ...],
     golden_dir: pathlib.Path,
 ) -> tuple[GoldenCase, ...]:
     """Run the source model on each case and write the tensors beside it.
@@ -224,27 +381,18 @@ def _capture_goldens(
     Captured from the model **before lowering**, which is what makes these a
     reference rather than a snapshot of whatever the export happened to produce.
     """
-    if golden_inputs is None:
-        cases_in: list[tuple[torch.Tensor, ...]] = [example]
-    else:
-        raw = golden_inputs() if callable(golden_inputs) else golden_inputs
-        cases_in = [_as_tuple(c) for c in raw]
-        if not cases_in:
-            raise ExportError(
-                "golden_inputs yielded nothing; omit it to capture the example "
-                "input alone rather than passing an empty iterable"
-            )
+    taps = tuple(s.name for s in activations)
 
     cases: list[GoldenCase] = []
     for index, case in enumerate(cases_in):
-        if len(case) != len(inputs):
-            raise ExportError(
-                f"golden {index} has {len(case)} inputs; the model takes {len(inputs)}"
-            )
-        with torch.no_grad():
-            produced = _as_tuple(model(*case))
+        if taps:
+            produced, captured = _run_with_taps(model, taps, case)
+        else:
+            captured = {}
+            with torch.no_grad():
+                produced = _as_tuple(model(*case))
 
-        in_keys, out_keys = [], []
+        in_keys, out_keys, act_keys = [], [], []
         for spec, tensor in zip(inputs, case, strict=True):
             key = f"{index}/in/{spec.name}.bin"
             _write_tensor(golden_dir / key, tensor, spec)
@@ -253,8 +401,19 @@ def _capture_goldens(
             key = f"{index}/out/{spec.name}.bin"
             _write_tensor(golden_dir / key, tensor, spec)
             out_keys.append(key)
+        for spec in activations:
+            key = f"{index}/act/{spec.name}.bin"
+            _write_tensor(golden_dir / key, captured[spec.name], spec)
+            act_keys.append(key)
 
-        cases.append(GoldenCase(f"case-{index}", tuple(in_keys), tuple(out_keys)))
+        cases.append(
+            GoldenCase(
+                f"case-{index}",
+                tuple(in_keys),
+                tuple(out_keys),
+                activation_keys=tuple(act_keys),
+            )
+        )
     return tuple(cases)
 
 
