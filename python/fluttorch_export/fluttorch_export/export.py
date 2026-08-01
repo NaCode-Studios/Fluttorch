@@ -152,9 +152,7 @@ def _lower(
         # decided here and not on the device. Recording the choice in the
         # manifest is what lets the parity matrix say which backend a number
         # came from rather than assuming.
-        partitioner = CoreMLPartitioner(
-            compile_specs=CoreMLBackend.generate_compile_specs()
-        )
+        partitioner = CoreMLPartitioner(compile_specs=CoreMLBackend.generate_compile_specs())
     else:
         raise ExportError(
             f"backend {backend!r} is not available; this build lowers for "
@@ -183,9 +181,7 @@ def _lower(
             raise ExportError(_convert_failure(recipe, e)) from e
         exported = torch.export.export(converted, example)
 
-    lowered = to_edge_transform_and_lower(
-        exported, partitioner=[partitioner]
-    ).to_executorch()
+    lowered = to_edge_transform_and_lower(exported, partitioner=[partitioner]).to_executorch()
     return bytes(lowered.buffer)
 
 

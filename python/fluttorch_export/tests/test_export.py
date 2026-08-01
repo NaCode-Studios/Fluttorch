@@ -183,17 +183,30 @@ class TestGoldens:
 
 
 class TestRefusals:
-    def test_an_unavailable_backend_says_which_milestone_adds_it(
-        self, tmp_path: pathlib.Path
-    ) -> None:
-        with pytest.raises(ExportError, match="not available yet"):
+    def test_an_unavailable_backend_lists_the_ones_that_work(self, tmp_path: pathlib.Path) -> None:
+        with pytest.raises(ExportError, match="xnnpack"):
             export_model(
                 model=sample_model.build(),
                 example_inputs=sample_model.example_inputs(),
                 out_dir=tmp_path,
-                name="coreml",
-                backend="coreml",
+                name="vulkan",
+                backend="vulkan",
             )
+
+    def test_core_ml_lowers_and_the_manifest_says_so(self, tmp_path: pathlib.Path) -> None:
+        # An artifact is lowered for one delegate, so which backend ran a number
+        # is a property of the export and not of the device it landed on.
+        result = export_model(
+            model=sample_model.build(),
+            example_inputs=sample_model.example_inputs(),
+            out_dir=tmp_path / "coreml",
+            name="two_layer",
+            backend="coreml",
+            golden_inputs=sample_model.golden_cases(),
+        )
+
+        assert result.artifact.stat().st_size > 0
+        assert result.golden_count == len(sample_model.golden_cases())
 
     def test_an_undescribable_dtype_is_refused(self, tmp_path: pathlib.Path) -> None:
         class Complex(torch.nn.Module):
