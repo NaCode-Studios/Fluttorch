@@ -36,3 +36,11 @@ examples/spike/build/
 # build_runner bookkeeping. The generated .dart next to the manifest is
 # committed on purpose; this is not.
 .dart_tool/build/
+
+# Python bytecode. Compiled files carry the absolute path of the machine that
+# built them, which is not something a public repository should publish, and
+# they were being committed because this file had no Python section at all.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
