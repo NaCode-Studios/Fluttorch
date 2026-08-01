@@ -222,7 +222,7 @@ void main() {
       },
     );
 
-    test('a backend without taps says that is what is missing', () async {
+    test('an export with no taps says which side is missing', () async {
       final manifest = _manifest();
       final goldens = _bundle(manifest);
       final model = await FakeModel.replaying(
@@ -231,9 +231,13 @@ void main() {
         perturb: (_, outputs) => outputs.first.asFloat32List()[0] += 5,
       );
 
+      // This manifest declares no activations, so the goldens are what is
+      // missing and not the hardware. Blaming the backend for that would send
+      // someone looking in the wrong place; the reverse case is covered in
+      // attribution_test.dart.
       expect(
         (await measureParity(model, goldens: goldens)).first.describe(),
-        contains('offers no activation taps'),
+        contains('the goldens record final outputs only'),
       );
     });
   });

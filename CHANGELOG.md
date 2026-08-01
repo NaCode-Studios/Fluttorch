@@ -9,6 +9,34 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
 
 ## [Unreleased]
 
+Tier 4, quantization and attribution. An export can now be quantized, and a failing
+gate can say which layer the numbers went wrong at rather than only which output was
+wrong.
+
+### Added
+
+- Three quantization recipes (M17): `int8-dynamic`, `int8-static` and
+  `int4-weight-only`, named in the manifest and read back on the device, where the name
+  selects the tolerance the gate starts from. A static recipe refuses to export against
+  fewer than two golden inputs: it fixes every activation range from what it observed,
+  so calibrating on one sample produces a model that passes its own single case and
+  clips everything else. The exporter cannot know what a representative set looks like
+  for a model it was handed, so it asks rather than guesses.
+- Reference activations in the manifest (M18). `--taps` names submodules whose outputs
+  are captured alongside each golden, in the order the graph produces them, which is
+  what makes "the earliest layer that diverged" a claim rather than a pick. Off by
+  default, because an intermediate is as large as the tensor it carries.
+- Per-layer attribution in the parity gate (M18). Where the export captured taps and the
+  backend offers them, the report names the earliest layer whose activations moved and
+  by how much. Both conditions are required and neither is assumed: a report that could
+  not look says which of the two was missing. A layer the backend did not tap is treated
+  as a hole rather than as agreement, so nothing after it is ruled out unless the
+  divergence was already found before it.
+- A recorded decision on the runtime (M19), in
+  [`docs/runtime-decision.md`](docs/runtime-decision.md). The four hooks M1 found missing
+  are proposed to `executorch_flutter` first, and the fork starts on schedule if they are
+  not merged by the time Tier 5 would begin.
+
 ### Internal
 
 - `release.yaml` publishes `fluttorch`, `fluttorch_gen` and `fluttorch_test` to pub.dev
@@ -19,6 +47,19 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
   wait on any of that: it is derived from the tag and the changelog and is true whatever
   the registry did, and chaining it would mean a re-run after a partial publish fails on
   the package that already went up.
+- The manifest gained `activations` and a per-golden `activations` key list. Additive, so
+  the schema version does not move: a reader that does not know the fields compares final
+  outputs and says it could not look deeper, which is what it did before they existed.
+  Both are exercised by the shared fixture that each language re-encodes byte for byte.
+- The quantization recipe names are asserted equal across the two languages. A recipe the
+  exporter can apply and the gate has no tolerance for produces a model the gate cannot
+  judge, and the failure is silent, so the Python suite reads `knownRecipes` out of the
+  Dart source rather than trusting the two lists to be kept in step by hand.
+- The lowering path for a quantized export is written and not executed. Neither this
+  machine nor CI has `torch`, so the recipe table, the calibration refusal and the manifest
+  round trip are covered while the quantized artifact itself is not. Running
+  `pytest python/fluttorch_export/tests` where torch is installed is what would close that
+  gap.
 - Published archives are recorded as linked artifacts on the organisation, keyed on the
   digest pub.dev serves them under. Metadata rather than distribution: nobody resolves a
   dependency from that panel. The step cannot fail the release, because a metadata write

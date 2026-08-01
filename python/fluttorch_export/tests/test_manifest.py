@@ -53,14 +53,24 @@ def canonical() -> ModelManifest:
             cast("float32"),
         ),
         labels=("low", "high"),
+        activations=(
+            TensorSpec("encoder.0", "float32", (1, 168, 32)),
+            TensorSpec("encoder.2", "float32", (DYNAMIC_DIM, 84, 32)),
+        ),
         goldens=(
             GoldenCase(
                 "case-0",
                 ("in/0/window", "in/0/calendar"),
                 ("out/0/load_mw",),
                 "a winter evening peak",
+                activation_keys=("act/0/encoder.0", "act/0/encoder.2"),
             ),
-            GoldenCase("case-1", ("in/1/window", "in/1/calendar"), ("out/1/load_mw",)),
+            GoldenCase(
+                "case-1",
+                ("in/1/window", "in/1/calendar"),
+                ("out/1/load_mw",),
+                activation_keys=("act/1/encoder.0", "act/1/encoder.2"),
+            ),
         ),
     )
 
@@ -180,4 +190,60 @@ class TestManifestConsistency:
                 inputs=self.IN,
                 outputs=self.OUT,
                 goldens=(GoldenCase("a", ("i", "j"), ("o",)),),
+            )
+
+
+class TestActivations:
+    """M18 · the taps a gate needs to say which layer moved first."""
+
+    def test_a_case_may_carry_none(self) -> None:
+        m = ModelManifest(
+            name="m",
+            weight_hash="sha256:00",
+            inputs=(TensorSpec("x", "float32", (1,)),),
+            outputs=(TensorSpec("y", "float32", (1,)),),
+            goldens=(GoldenCase("case-0", ("a",), ("b",)),),
+        )
+        assert m.to_dict().get("activations") is None
+        assert "activations" not in m.to_dict()["goldens"][0]
+
+    def test_a_partial_set_is_refused(self) -> None:
+        # Attributing to the earliest captured layer reads exactly like
+        # attributing to the earliest diverging one, and is a different claim.
+        with pytest.raises(ManifestError, match="names 1 activations"):
+            ModelManifest(
+                name="m",
+                weight_hash="sha256:00",
+                inputs=(TensorSpec("x", "float32", (1,)),),
+                outputs=(TensorSpec("y", "float32", (1,)),),
+                activations=(
+                    TensorSpec("l0", "float32", (1,)),
+                    TensorSpec("l1", "float32", (1,)),
+                ),
+                goldens=(GoldenCase("case-0", ("a",), ("b",), activation_keys=("k",)),),
+            )
+
+    def test_a_declared_tap_nothing_captured_is_refused(self) -> None:
+        with pytest.raises(ManifestError, match="no golden case records"):
+            ModelManifest(
+                name="m",
+                weight_hash="sha256:00",
+                inputs=(TensorSpec("x", "float32", (1,)),),
+                outputs=(TensorSpec("y", "float32", (1,)),),
+                activations=(TensorSpec("l0", "float32", (1,)),),
+                goldens=(GoldenCase("case-0", ("a",), ("b",)),),
+            )
+
+    def test_two_taps_cannot_share_a_name(self) -> None:
+        with pytest.raises(ManifestError, match="duplicate activation"):
+            ModelManifest(
+                name="m",
+                weight_hash="sha256:00",
+                inputs=(TensorSpec("x", "float32", (1,)),),
+                outputs=(TensorSpec("y", "float32", (1,)),),
+                activations=(
+                    TensorSpec("l0", "float32", (1,)),
+                    TensorSpec("l0", "float32", (2,)),
+                ),
+                goldens=(GoldenCase("case-0", ("a",), ("b",), activation_keys=("k", "j")),),
             )

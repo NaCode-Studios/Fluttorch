@@ -66,6 +66,26 @@
       "target": "float32"
     }
   ],
+  "activations": [
+    {
+      "name": "encoder.0",
+      "dtype": "float32",
+      "shape": [
+        1,
+        168,
+        32
+      ]
+    },
+    {
+      "name": "encoder.2",
+      "dtype": "float32",
+      "shape": [
+        -1,
+        84,
+        32
+      ]
+    }
+  ],
   "labels": [
     "low",
     "high"
@@ -80,7 +100,11 @@
       "outputs": [
         "out/0/load_mw"
       ],
-      "description": "a winter evening peak"
+      "description": "a winter evening peak",
+      "activations": [
+        "act/0/encoder.0",
+        "act/0/encoder.2"
+      ]
     },
     {
       "id": "case-1",
@@ -90,6 +114,10 @@
       ],
       "outputs": [
         "out/1/load_mw"
+      ],
+      "activations": [
+        "act/1/encoder.0",
+        "act/1/encoder.2"
       ]
     }
   ]

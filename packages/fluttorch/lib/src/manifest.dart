@@ -18,6 +18,7 @@ final class ModelManifest {
     this.preprocessing = const [],
     this.labels,
     this.goldens = const [],
+    this.activations = const [],
   });
 
   /// Schema version this build writes, and the highest it can read.
@@ -60,6 +61,15 @@ final class ModelManifest {
 
   /// Reference input and output pairs captured from the source model.
   final List<GoldenCase> goldens;
+
+  /// Intermediate tensors the export tapped, in the order the graph produces
+  /// them.
+  ///
+  /// The order carries the meaning: attribution reports the earliest layer whose
+  /// numbers moved, and earliest is only defined against a declared sequence.
+  /// Empty is the ordinary case, and it costs exactly one thing: a failing gate
+  /// can name the output that was wrong but not the layer that made it wrong.
+  final List<TensorSpec> activations;
 
   /// Whether any preprocessing step is unrecognised by this build.
   ///
@@ -204,6 +214,7 @@ final class GoldenCase {
     required this.inputKeys,
     required this.outputKeys,
     this.description,
+    this.activationKeys = const [],
   });
 
   /// Stable identifier, used in failure output so a case can be found again.
@@ -219,6 +230,15 @@ final class GoldenCase {
   /// What this case is for, when it was captured deliberately rather than
   /// sampled — an edge case is worth a sentence.
   final String? description;
+
+  /// Keys of the reference activations, positional with
+  /// [ModelManifest.activations].
+  ///
+  /// Empty unless the export captured taps. A case carries all of them or none:
+  /// a partial set would attribute a drift to the earliest layer that happened
+  /// to be captured, which reads identically to the earliest layer that diverged
+  /// and is a different claim.
+  final List<String> activationKeys;
 
   @override
   String toString() => 'GoldenCase($id)';

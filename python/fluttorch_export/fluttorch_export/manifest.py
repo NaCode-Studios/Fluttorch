@@ -170,6 +170,13 @@ class GoldenCase:
     input_keys: tuple[str, ...]
     output_keys: tuple[str, ...]
     description: str | None = None
+    activation_keys: tuple[str, ...] = ()
+    """Reference activations, positional with ``ModelManifest.activations``.
+
+    Absent unless the export captured taps. A gate can compare final outputs
+    without them; attributing a drift to the layer that caused it cannot, because
+    there is nothing to compare an on-device activation against.
+    """
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -179,6 +186,8 @@ class GoldenCase:
         }
         if self.description is not None:
             d["description"] = self.description
+        if self.activation_keys:
+            d["activations"] = list(self.activation_keys)
         return d
 
 
@@ -194,6 +203,16 @@ class ModelManifest:
     preprocessing: tuple[PreprocessingStep, ...] = ()
     labels: tuple[str, ...] | None = None
     goldens: tuple[GoldenCase, ...] = ()
+    activations: tuple[TensorSpec, ...] = ()
+    """Intermediate tensors the export tapped, in the order the graph produces them.
+
+    The order is the whole point: attribution reports the earliest layer whose
+    numbers moved, and earliest is only meaningful against a declared sequence.
+
+    Additive, so the schema version does not move. A reader that does not know
+    this field compares final outputs and says it could not look deeper, which is
+    what it did before the field existed.
+    """
     schema_version: int = SCHEMA_VERSION
 
     def __post_init__(self) -> None:
@@ -201,7 +220,11 @@ class ModelManifest:
             raise ManifestError(f"{self.name!r} declares no inputs")
         if not self.outputs:
             raise ManifestError(f"{self.name!r} declares no outputs")
-        for role, specs in (("input", self.inputs), ("output", self.outputs)):
+        for role, specs in (
+            ("input", self.inputs),
+            ("output", self.outputs),
+            ("activation", self.activations),
+        ):
             names = [s.name for s in specs]
             duplicates = {n for n in names if names.count(n) > 1}
             if duplicates:
@@ -224,6 +247,20 @@ class ModelManifest:
                     f"golden {g.id!r} names {len(g.output_keys)} outputs; "
                     f"the model returns {len(self.outputs)}"
                 )
+            # Either a case carries every declared activation or none of them. A
+            # partial set would attribute drift to the earliest layer that
+            # happens to have been captured, which reads identically to the
+            # earliest layer that diverged and is a different claim.
+            if g.activation_keys and len(g.activation_keys) != len(self.activations):
+                raise ManifestError(
+                    f"golden {g.id!r} names {len(g.activation_keys)} activations; "
+                    f"the export declares {len(self.activations)}"
+                )
+        if self.activations and not any(g.activation_keys for g in self.goldens):
+            raise ManifestError(
+                f"{self.name!r} declares {len(self.activations)} activation(s) that no "
+                "golden case records; a tap nothing was captured for cannot be compared"
+            )
 
     def to_dict(self) -> dict[str, Any]:
         """The manifest as the JSON document a Dart reader consumes.
@@ -243,6 +280,8 @@ class ModelManifest:
         d["outputs"] = [s.to_dict() for s in self.outputs]
         if self.preprocessing:
             d["preprocessing"] = [s.to_dict() for s in self.preprocessing]
+        if self.activations:
+            d["activations"] = [s.to_dict() for s in self.activations]
         if self.labels is not None:
             d["labels"] = list(self.labels)
         if self.goldens:

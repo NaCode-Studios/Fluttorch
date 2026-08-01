@@ -54,6 +54,9 @@ abstract final class ManifestCodec {
       preprocessing: _preprocessing(json),
       labels: _optionalStringList(json, 'labels'),
       goldens: _goldens(json),
+      activations: json.containsKey('activations')
+          ? _specs(json, 'activations')
+          : const [],
     );
   }
 
@@ -78,6 +81,8 @@ abstract final class ManifestCodec {
     'outputs': m.outputs.map(_specToJson).toList(),
     if (m.preprocessing.isNotEmpty)
       'preprocessing': m.preprocessing.map(_stepToJson).toList(),
+    if (m.activations.isNotEmpty)
+      'activations': m.activations.map(_specToJson).toList(),
     if (m.labels != null) 'labels': m.labels,
     if (m.goldens.isNotEmpty) 'goldens': m.goldens.map(_goldenToJson).toList(),
   };
@@ -235,6 +240,7 @@ abstract final class ManifestCodec {
     'inputs': g.inputKeys,
     'outputs': g.outputKeys,
     if (g.description != null) 'description': g.description,
+    if (g.activationKeys.isNotEmpty) 'activations': g.activationKeys,
   };
 
   static List<GoldenCase> _goldens(Map<String, Object?> json) {
@@ -259,6 +265,9 @@ abstract final class ManifestCodec {
           inputKeys: _stringList(map, 'inputs', path: path),
           outputKeys: _stringList(map, 'outputs', path: path),
           description: _optionalString(map, 'description'),
+          activationKeys: map.containsKey('activations')
+              ? _stringList(map, 'activations', path: path)
+              : const [],
         ),
       );
     }
