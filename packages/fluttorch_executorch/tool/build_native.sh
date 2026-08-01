@@ -19,6 +19,13 @@
 #     -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON
 #   cmake --build cmake-out -j
 #
+# Each further delegate is one more flag on that configure, and each is optional:
+# -DEXECUTORCH_BUILD_MPS=ON, -DEXECUTORCH_BUILD_METAL=ON,
+# -DEXECUTORCH_BUILD_VULKAN=ON, -DEXECUTORCH_BUILD_MLX=ON,
+# -DEXECUTORCH_BUILD_QNN=ON. This script links whichever ones the checkout ended
+# up with and says so, one line per backend, so a library that turns out to lack
+# one says which rather than leaving it to be discovered at load.
+#
 # Core ML is linked when the checkout carries it and skipped when it does not, so
 # a contributor who has only built XNNPACK still gets a library. Getting it means
 # adding -DEXECUTORCH_BUILD_COREML=ON -DEXECUTORCH_BUILD_DEVTOOLS=ON to the
@@ -100,8 +107,38 @@ if [ "$(uname -s)" = "Darwin" ] && [ -f "$COREML/libcoremldelegate.a" ] &&
   SHARED+=(-framework CoreML -lsqlite3)
   echo "linking Core ML"
 else
-  echo "no Core ML under $OUT; building XNNPACK alone"
+  echo "no Core ML under $OUT"
 fi
+
+# The rest of the delegates, each linked when the checkout built it and skipped
+# when it did not. Skipping is the designed outcome and not a degraded one: a
+# machine that never built Vulkan should produce a library that says it cannot
+# run Vulkan, rather than one that fails to link or claims a backend it lacks.
+#
+# The frameworks each needs are its own. MPS and Metal draw on Apple's, and both
+# are absent everywhere else, which the Darwin test above already governs.
+link_backend() {
+  local name="$1" archive="$2" define="$3"
+  shift 3
+  if [ ! -f "$archive" ]; then
+    echo "no $name under $OUT"
+    return
+  fi
+  DEFINES+=("$define")
+  BACKENDS+=(-Wl,-force_load,"$archive")
+  if [ "$#" -gt 0 ]; then SHARED+=("$@"); fi
+  echo "linking $name"
+}
+
+if [ "$(uname -s)" = "Darwin" ]; then
+  link_backend MPS "$OUT/backends/apple/mps/libmpsdelegate.a" \
+    -DFLUTTORCH_WITH_MPS -framework MetalPerformanceShaders -framework MetalPerformanceShadersGraph -framework Metal
+  link_backend Metal "$OUT/backends/apple/metal/libmetal_backend.a" \
+    -DFLUTTORCH_WITH_METAL -framework Metal
+fi
+link_backend Vulkan "$OUT/backends/vulkan/libvulkan_backend.a" -DFLUTTORCH_WITH_VULKAN
+link_backend MLX "$OUT/backends/mlx/libmlx_backend.a" -DFLUTTORCH_WITH_MLX
+link_backend QNN "$OUT/backends/qualcomm/libqnn_executorch_backend.a" -DFLUTTORCH_WITH_QNN
 
 # The parent of the checkout, because ExecuTorch's own headers include each other
 # as executorch/... and the checkout directory is that "executorch".

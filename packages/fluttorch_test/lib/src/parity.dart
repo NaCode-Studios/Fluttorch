@@ -30,7 +30,11 @@ Future<List<DriftReport>> measureParity(
   Tolerance? tolerance,
 }) async {
   final bounds =
-      tolerance ?? Tolerance.startingPointFor(model.manifest.quantization);
+      tolerance ??
+      Tolerance.startingPointFor(
+        model.manifest.quantization,
+        precision: model.manifest.precision,
+      );
   if (bounds == null) {
     throw ArgumentError.value(
       model.manifest.quantization,
@@ -191,6 +195,7 @@ Future<DriftReport> _replay(
     goldenId: golden.id,
     backend: model.backend,
     quantization: manifest.quantization,
+    precision: manifest.precision,
     tensors: drifts,
     layers: attribution.layers,
     firstDivergentLayer: attribution.firstDivergent,

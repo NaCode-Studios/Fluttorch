@@ -110,6 +110,7 @@ final class DriftReport {
     required this.backend,
     required this.tensors,
     this.quantization,
+    this.precision,
     this.firstDivergentLayer,
     this.attributionAttempted = false,
     this.attributionUnavailable,
@@ -125,6 +126,13 @@ final class DriftReport {
 
   /// Recipe the artifact was exported with, from the manifest.
   final String? quantization;
+
+  /// Compute precision the artifact was lowered at, from the manifest.
+  ///
+  /// Reported alongside the recipe because they are the two things that decide
+  /// the bound, and a report naming one of them explains half of why a number
+  /// was allowed.
+  final String? precision;
 
   /// Earliest layer whose activations diverged.
   ///
@@ -165,7 +173,8 @@ final class DriftReport {
       ..writeln('${passes ? "PASS" : "FAIL"}  parity/$goldenId')
       ..writeln(
         '      backend: $backend  '
-        'quantization: ${quantization ?? "none"}',
+        'quantization: ${quantization ?? "none"}  '
+        'precision: ${precision ?? "float32"}',
       );
     for (final t in passes ? tensors : failures) {
       b.writeln('      $t');

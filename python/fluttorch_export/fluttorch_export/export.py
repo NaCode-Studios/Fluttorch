@@ -16,6 +16,7 @@ description of `torch.randn` rather than of the model's job.
 from __future__ import annotations
 
 import dataclasses
+import functools
 import hashlib
 import importlib
 import pathlib
@@ -128,13 +129,154 @@ def _specs(
     return tuple(out)
 
 
+#: Every backend this exporter knows, in the order a caller meets them: the one
+#: that delegates nothing, the two that run anywhere the toolchain is installed,
+#: then the ones that need an accelerator or a vendor SDK.
+BACKENDS: tuple[str, ...] = (
+    "portable",
+    "xnnpack",
+    "coreml",
+    "mps",
+    "metal",
+    "vulkan",
+    "mlx",
+    "qnn",
+)
+
+#: What a machine has to have before a backend can lower, keyed by backend.
+#:
+#: Written down because upstream does not say. A missing Qualcomm SDK surfaces as
+#: an ImportError about a Python package nobody asked for, and Metal surfaces as a
+#: dylib filename with no hint of the flag that builds it. Neither tells a caller
+#: what to do, and both cost an afternoon the first time.
+_TOOLCHAINS: dict[str, str] = {
+    "mps": "the MPS delegate, which needs macOS and a Metal-capable device",
+    "metal": (
+        "torchao built with TORCHAO_BUILD_EXPERIMENTAL_MPS=1, which is what "
+        "provides libtorchao_ops_mps_aten.dylib"
+    ),
+    "vulkan": "the Vulkan delegate and a Vulkan driver, which on macOS means MoltenVK",
+    "mlx": "the MLX delegate, which needs Apple silicon",
+    "qnn": (
+        "py-cpuinfo and Qualcomm's QNN SDK, which executorch does not vendor and "
+        "which has no macOS build"
+    ),
+}
+
+
+def _mps_partitioner() -> Any:
+    from executorch.backends.apple.mps.partition.mps_partitioner import MPSPartitioner
+    from executorch.exir.backend.compile_spec_schema import CompileSpec
+
+    # Half precision, which is what an MPS deployment runs and what the manifest
+    # now records. See the note on the Core ML branch.
+    return MPSPartitioner(compile_specs=[CompileSpec("use_fp16", bytes([True]))])
+
+
+def _metal_partitioner() -> Any:
+    from executorch.backends.apple.metal.metal_backend import MetalBackend
+    from executorch.backends.apple.metal.metal_partitioner import MetalPartitioner
+
+    return MetalPartitioner([MetalBackend.generate_method_name_compile_spec("forward")])
+
+
+def _vulkan_partitioner() -> Any:
+    from executorch.backends.vulkan.partitioner.vulkan_partitioner import (
+        VulkanPartitioner,
+    )
+
+    return VulkanPartitioner()
+
+
+def _mlx_partitioner() -> Any:
+    from executorch.backends.mlx.partitioner import MLXPartitioner
+
+    return MLXPartitioner()
+
+
+def _qnn_partitioner() -> Any:
+    from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
+
+    return QnnPartitioner()
+
+
+#: Backends that do arithmetic in half precision, and what they do it in.
+#:
+#: Absent means float32, which is what the manifest says by saying nothing. Both
+#: entries here are the delegate's own default rather than a choice this exporter
+#: makes: half precision is the point of shipping to an Apple GPU, and the export
+#: records it instead of overriding it.
+_PRECISIONS: dict[str, str] = {
+    "coreml": "float16",
+    "mps": "float16",
+}
+
+
+_PARTITIONERS: dict[str, Any] = {
+    "mps": _mps_partitioner,
+    "metal": _metal_partitioner,
+    "vulkan": _vulkan_partitioner,
+    "mlx": _mlx_partitioner,
+    "qnn": _qnn_partitioner,
+}
+
+
+def _build_partitioner(backend: str) -> Any:
+    """Construct a delegate's partitioner, or say what is missing.
+
+    Degrading rather than failing is the point: a backend this machine cannot
+    lower for is a fact about the machine, and a caller who is told which piece
+    is absent can install it or pick another backend. An ImportError from three
+    libraries down tells them neither.
+    """
+    try:
+        return _PARTITIONERS[backend]()
+    except Exception as e:  # noqa: BLE001 - re-raised with what to do about it
+        raise ExportError(_missing_toolchain(backend, e)) from e
+
+
+def available_backends() -> tuple[str, ...]:
+    """The backends this machine can actually lower for, asked rather than assumed.
+
+    Whether a delegate works here is a property of the installed toolchain, not
+    of this package: the same checkout lowers for MLX on Apple silicon and
+    refuses it everywhere else.
+
+    Answered by lowering a one-operation model, which is slower than importing a
+    partitioner and is the only thing that is true. Metal is the reason. Its
+    partitioner constructs on any Mac and then fails during preprocessing,
+    because what it actually needs is a torchao dylib nobody built. A list based
+    on imports would name it available and be wrong exactly where it mattered.
+    """
+    return tuple(name for name in BACKENDS if _can_lower(name))
+
+
+@functools.cache
+def _can_lower(backend: str) -> bool:
+    """Whether a one-operation model lowers for ``backend``, cached per process.
+
+    Cached because the answer cannot change while the process runs and asking is
+    expensive: it invokes the whole delegate.
+    """
+
+    class _OneOp(torch.nn.Module):
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return x + x
+
+    try:
+        _lower(_OneOp().eval(), (torch.ones(1, 2),), backend)
+    except Exception:  # noqa: BLE001 - the question is only whether it worked
+        return False
+    return True
+
+
 def _lower(
     model: torch.nn.Module,
     example: tuple[torch.Tensor, ...],
     backend: str,
     recipe: Recipe | None = None,
     calibration: Sequence[tuple[torch.Tensor, ...]] = (),
-) -> tuple[bytes, dict[str, int]]:
+) -> tuple[bytes, dict[str, int], str | None]:
     """Trace, quantize if a recipe was named, lower and serialise.
 
     Returns the artifact and, for each submodule the lowered graph still executes
@@ -169,22 +311,22 @@ def _lower(
         # manifest is what lets the parity matrix say which backend a number
         # came from rather than assuming.
         #
-        # Float32 is pinned rather than accepted. Core ML converts to float16 by
-        # default, and the manifest has no field that records it, so an artifact
-        # lowered on that default answers to a full-precision bound it cannot
-        # hold: on this two-layer model that reads as drift up to 9.7e-2 against
-        # references the source model produced. Until the manifest can describe
-        # the precision, the export stays at the one the manifest already claims
-        # by saying nothing.
+        # Float16 is Core ML's own default and is what a deployment would run, so
+        # it is what the export produces. The manifest records it, which is the
+        # part that used to be missing: an artifact lowered at half precision
+        # answering to a full-precision bound failed a gate while doing exactly
+        # what it was told.
         partitioner = CoreMLPartitioner(
             compile_specs=CoreMLBackend.generate_compile_specs(
-                compute_precision=ct.precision.FLOAT32,
+                compute_precision=ct.precision.FLOAT16,
             )
         )
+    elif backend in _PARTITIONERS:
+        partitioner = _build_partitioner(backend)
     else:
         raise ExportError(
-            f"backend {backend!r} is not available; this build lowers for "
-            "'portable', 'xnnpack' and 'coreml', and M23 adds the rest."
+            f"backend {backend!r} is not one this exporter knows; it lowers for "
+            f"{', '.join(repr(b) for b in BACKENDS)}"
         )
 
     exported = torch.export.export(model, example)
@@ -209,10 +351,35 @@ def _lower(
             raise ExportError(_convert_failure(recipe, e)) from e
         exported = torch.export.export(converted, example)
 
-    lowered = to_edge_transform_and_lower(
-        exported, partitioner=None if partitioner is None else [partitioner]
-    ).to_executorch()
-    return bytes(lowered.buffer), _handles_by_module(lowered)
+    try:
+        lowered = to_edge_transform_and_lower(
+            exported, partitioner=None if partitioner is None else [partitioner]
+        ).to_executorch()
+    except Exception as e:  # noqa: BLE001 - re-raised with what to do about it
+        # A delegate can construct and still not work. Metal's partitioner takes
+        # any Mac and then fails here, looking for a torchao dylib whose build
+        # flag it does not name, so the check that matters is this one and the
+        # message has to come from the same place.
+        if backend not in _TOOLCHAINS:
+            raise
+        raise ExportError(_missing_toolchain(backend, e)) from e
+
+    return bytes(lowered.buffer), _handles_by_module(lowered), _PRECISIONS.get(backend)
+
+
+def _missing_toolchain(backend: str, error: Exception) -> str:
+    """Say which piece is absent, and leave the original reason attached.
+
+    Degrading rather than failing is what this milestone is about: a backend this
+    machine cannot lower for is a fact about the machine, and a caller told which
+    piece is missing can install it or pick another backend. An error from three
+    libraries down tells them neither.
+    """
+    return (
+        f"this machine cannot lower for {backend!r}: it needs {_TOOLCHAINS[backend]}. "
+        f"What it failed on was {type(error).__name__}: {str(error).strip()[:200]}. "
+        f"available_backends() reports the ones it can lower for."
+    )
 
 
 def _handles_by_module(lowered: Any) -> dict[str, int]:
@@ -307,7 +474,9 @@ def export_model(
     if recipe is not None:
         check_calibration(recipe, cases_in)
 
-    buffer, graph_handles = _lower(model, example, backend, recipe=recipe, calibration=cases_in)
+    buffer, graph_handles, precision = _lower(
+        model, example, backend, recipe=recipe, calibration=cases_in
+    )
 
     out_dir = pathlib.Path(out_dir)
     golden_dir = out_dir / "goldens"
@@ -335,6 +504,7 @@ def export_model(
         inputs=inputs,
         outputs=outputs,
         quantization=quantization,
+        precision=precision,
         preprocessing=tuple(preprocessing),
         labels=tuple(labels) if labels is not None else None,
         goldens=cases,

@@ -49,6 +49,7 @@ abstract final class ManifestCodec {
       schemaVersion: version,
       weightHash: _string(json, 'weight_hash'),
       quantization: _optionalString(json, 'quantization'),
+      precision: _optionalString(json, 'precision'),
       inputs: _specs(json, 'inputs'),
       outputs: _specs(json, 'outputs'),
       preprocessing: _preprocessing(json),
@@ -80,6 +81,7 @@ abstract final class ManifestCodec {
     'name': m.name,
     'weight_hash': m.weightHash,
     if (m.quantization != null) 'quantization': m.quantization,
+    if (m.precision != null) 'precision': m.precision,
     'inputs': m.inputs.map(_specToJson).toList(),
     'outputs': m.outputs.map(_specToJson).toList(),
     if (m.preprocessing.isNotEmpty)

@@ -28,6 +28,7 @@ final _library = File(
 final _quantized = Directory('../../testdata/quantized');
 final _coreml = Directory('../../testdata/coreml');
 final _taps = Directory('../../testdata/taps');
+final _mps = Directory('../../testdata/mps');
 
 void main() {
   if (!_library.existsSync() || !_quantized.existsSync()) {
@@ -38,6 +39,109 @@ void main() {
   }
 
   final bindings = NativeExecuTorchBindings.open(_library.path);
+
+  // M24 · every backend this machine has, measured on one set of goldens.
+  //
+  // Built from what is present rather than from a fixed list, which is the only
+  // way the matrix survives contact with a second machine: the same suite has
+  // four columns here and one on a laptop that never built a delegate.
+  group('M24 · the same goldens across every backend this machine has', () {
+    final candidates = <String, Directory>{
+      'xnnpack': _quantized,
+      'portable': _taps,
+      'coreml': _coreml,
+      'mps': _mps,
+    };
+
+    late ParityMatrix matrix;
+    final loaded = <LoadedModel>[];
+
+    setUpAll(() async {
+      final entries = <MatrixEntry>[];
+      for (final entry in candidates.entries) {
+        if (!entry.value.existsSync()) continue;
+        if (!bindings.backends().contains(entry.key)) continue;
+        final goldens = await DirectoryGoldenBundle.open(
+          '${entry.value.path}/two_layer.fluttorch.json',
+        );
+        final model = await ExecuTorchRuntime(bindings).load(
+          artifact: await File(
+            '${entry.value.path}/two_layer.pte',
+          ).readAsBytes(),
+          manifest: goldens.manifest,
+          backend: entry.key,
+        );
+        loaded.add(model);
+        entries.add(MatrixEntry(model: model, goldens: goldens));
+      }
+      matrix = await measureMatrix(entries);
+    });
+
+    tearDownAll(() async {
+      for (final m in loaded) {
+        await m.dispose();
+      }
+    });
+
+    test('it covers more than one backend, or it is not a matrix', () {
+      expect(matrix.backends.length, greaterThan(1));
+      expect(matrix.goldenIds, hasLength(4));
+      // Every cell measured. A hole reads as agreement in a table, which is the
+      // thing this whole package exists to stop.
+      for (final backend in matrix.backends) {
+        for (final id in matrix.goldenIds) {
+          expect(
+            matrix.at(backend: backend, goldenId: id),
+            isNotNull,
+            reason: '$backend/$id',
+          );
+        }
+      }
+    });
+
+    test('every backend holds the bound its own export implies', () {
+      expect(matrix.passes, isTrue, reason: matrix.describe());
+    });
+
+    test('the quantized column is the one that moved', () {
+      // The matrix earns its place here. Three backends carry the model at full
+      // precision and agree with the source to within float32; one carries it at
+      // int8 and does not. A table where every column read the same would mean
+      // the quantized artifact was not quantized.
+      final exact = matrix.backends.where((b) => b != 'xnnpack');
+      for (final id in matrix.goldenIds) {
+        final quantized = matrix
+            .at(backend: 'xnnpack', goldenId: id)!
+            .tensors
+            .single
+            .maxRelative;
+        for (final backend in exact) {
+          final other = matrix
+              .at(backend: backend, goldenId: id)!
+              .tensors
+              .single
+              .maxRelative;
+          expect(
+            quantized,
+            greaterThan(other),
+            reason: '$id: xnnpack(int8) should move more than $backend',
+          );
+        }
+      }
+    });
+
+    test('the report names every backend and every golden', () {
+      final report = matrix.describe();
+      expect(report, startsWith('PASS'));
+      for (final backend in matrix.backends) {
+        expect(report, contains(backend));
+      }
+      for (final id in matrix.goldenIds) {
+        expect(report, contains(id));
+      }
+      printOnFailure(report);
+    });
+  });
 
   group('M21 · a quantized model on this machine', () {
     late DirectoryGoldenBundle goldens;
@@ -73,9 +177,15 @@ void main() {
 
       // Quantization moved the numbers. A gate reporting zero drift on an int8
       // model would be measuring something other than the model.
-      expect(reports.every((r) => r.tensors.single.maxAbsolute > 0), isTrue);
+      expect(reports.every((r) => r.tensors.single.maxRelative > 0), isTrue);
       // And it is small enough to be quantization rather than a broken export.
-      expect(reports.every((r) => r.tensors.single.maxAbsolute < 0.01), isTrue);
+      //
+      // Relative rather than absolute, because absolute is not comparable across
+      // these goldens: one case feeds the model inputs of magnitude 1e3 and its
+      // outputs are around 175, where an absolute bound of 0.01 asks for six
+      // significant figures out of int8. Relative asks the same question of
+      // every case.
+      expect(reports.every((r) => r.tensors.single.maxRelative < 0.05), isTrue);
     });
 
     test('held to a full-precision bound, the same run fails', () async {
@@ -145,18 +255,30 @@ void main() {
 
     test('it loads on the backend it was lowered for', () {
       expect(model.backend, 'coreml');
-      // Nothing quantized it, and the manifest saying so is load-bearing: the
-      // exporter pins Core ML to float32 precisely because a manifest that says
-      // nothing is read as full precision, and Core ML's own default is float16.
-      // So the bound this answers to is the one the quantized run above fails.
+      // Nothing quantized it, and it is not full precision either. Core ML does
+      // arithmetic in float16 by default, which is what a deployment runs, and
+      // the manifest recording that is what lets the gate pick a bound the
+      // artifact can actually hold.
       expect(model.manifest.quantization, isNull);
+      expect(model.manifest.precision, 'float16');
     });
 
-    test('every golden holds at the full-precision bound', () async {
-      // No tolerance is passed: with no recipe in the manifest the gate falls
-      // back to the full-precision starting point on its own, which is the
-      // bound worth holding a delegate to that only re-ordered the graph.
+    test('every golden holds at the bound its precision implies', () async {
+      // No tolerance is passed. The manifest says float16 and the gate sizes
+      // the bound from that on its own, which is the whole of #53.
       await expectParity(model, goldens: goldens);
+    });
+
+    test('held to the float32 bound, the same run fails', () async {
+      // The half that makes the first one mean something. If a float16 artifact
+      // passed at the float32 bound too, recording the precision would have
+      // bought nothing and the bound would be decorative.
+      final reports = await measureParity(
+        model,
+        goldens: goldens,
+        tolerance: Tolerance.startingPointFor(null),
+      );
+      expect(reports.every((r) => !r.passes), isTrue);
     });
 
     test('the delegate answered, and every case was measured', () async {
@@ -286,6 +408,50 @@ void main() {
           );
         }
       }
+    });
+  });
+
+  // Whether this build carries MPS is a property of the ExecuTorch checkout, so
+  // the library is asked. A machine that never built it gets a named skip rather
+  // than a failure, which is the whole of what M23 asks of a backend.
+  if (!bindings.backends().contains('mps') || !_mps.existsSync()) {
+    test('the MPS gate needs an ExecuTorch built with it', () {}, skip: true);
+    return;
+  }
+
+  group('M23 · the same model through MPS', () {
+    late DirectoryGoldenBundle goldens;
+    late LoadedModel model;
+
+    setUpAll(() async {
+      goldens = await DirectoryGoldenBundle.open(
+        '${_mps.path}/two_layer.fluttorch.json',
+      );
+      model = await ExecuTorchRuntime(bindings).load(
+        artifact: await File('${_mps.path}/two_layer.pte').readAsBytes(),
+        manifest: goldens.manifest,
+        backend: 'mps',
+      );
+    });
+
+    tearDownAll(() async => model.dispose());
+
+    test('it loads on the backend it was lowered for', () {
+      expect(model.backend, 'mps');
+    });
+
+    test('every golden holds at the bound its precision implies', () async {
+      // Half precision, like Core ML and for the same reason: it is what an MPS
+      // deployment runs, and the manifest says so rather than leaving the gate
+      // to assume float32.
+      expect(model.manifest.precision, 'float16');
+      await expectParity(model, goldens: goldens);
+    });
+
+    test('it refuses determinism rather than promising it', () async {
+      // A GPU schedules work it does not undertake to schedule the same way
+      // twice. Saying so is worth more than a flag nobody can rely on.
+      expect(model.capabilities.supportsDeterministicExecution, isFalse);
     });
   });
 }

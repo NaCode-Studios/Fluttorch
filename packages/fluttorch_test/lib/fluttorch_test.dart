@@ -13,5 +13,6 @@ library;
 
 export 'src/bundle.dart';
 export 'src/drift.dart';
+export 'src/matrix.dart';
 export 'src/parity.dart';
 export 'src/tolerance.dart';

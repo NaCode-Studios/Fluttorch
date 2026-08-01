@@ -24,6 +24,11 @@ SCHEMA_VERSION = 1
 #: Marks a dimension whose extent is decided at run time.
 DYNAMIC_DIM = -1
 
+#: Compute precisions a delegate can be lowered at, and that the gate can size a
+#: bound for. Float32 is written as absence rather than as a name, so a manifest
+#: from before the field existed keeps meaning what it always meant.
+PRECISIONS: frozenset[str] = frozenset({"float16", "float32"})
+
 #: Element types, keyed by the name written to the manifest. The value is the
 #: width in bytes, which is what makes ``elements x width == len(buffer)``
 #: checkable on both sides.
@@ -200,6 +205,20 @@ class ModelManifest:
     inputs: tuple[TensorSpec, ...]
     outputs: tuple[TensorSpec, ...]
     quantization: str | None = None
+    precision: str | None = None
+    """The compute precision the delegate was lowered at, when it is not float32.
+
+    Separate from ``quantization`` because they are separate decisions that
+    compound. A recipe says how the weights were stored; this says what the
+    delegate does arithmetic in, and a backend can halve the second while leaving
+    the first alone. Core ML and MPS both do exactly that by default.
+
+    Absent means float32, which is what a reader without this field assumed
+    anyway, so the field is additive. What it fixes is the case where the
+    absence was a lie: an artifact lowered at float16 answered to a
+    full-precision bound it could not hold, and the gate failed a model that was
+    doing what it was told.
+    """
     preprocessing: tuple[PreprocessingStep, ...] = ()
     labels: tuple[str, ...] | None = None
     goldens: tuple[GoldenCase, ...] = ()
@@ -273,6 +292,12 @@ class ModelManifest:
                 f"{self.name!r} declares {len(self.activations)} activation(s) that no "
                 "golden case records; a tap nothing was captured for cannot be compared"
             )
+        if self.precision is not None and self.precision not in PRECISIONS:
+            raise ManifestError(
+                f"{self.name!r} declares precision {self.precision!r}; this build "
+                f"knows {', '.join(sorted(PRECISIONS))}. A precision nobody has "
+                "measured a bound for would leave the gate with no bound to pick"
+            )
         # Positional, so a partial list would silently address the wrong layer:
         # handle[1] answering for activations[2] reads as a clean comparison of
         # two unrelated tensors.
@@ -296,6 +321,8 @@ class ModelManifest:
         }
         if self.quantization is not None:
             d["quantization"] = self.quantization
+        if self.precision is not None:
+            d["precision"] = self.precision
         d["inputs"] = [s.to_dict() for s in self.inputs]
         d["outputs"] = [s.to_dict() for s in self.outputs]
         if self.preprocessing:

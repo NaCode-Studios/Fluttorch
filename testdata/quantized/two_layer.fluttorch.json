@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "name": "two_layer",
-  "weight_hash": "sha256:7a6e252c04b0092d63538447ee0bb6cc98e18dc0c9fb3663e06f7612fbbeaffb",
+  "weight_hash": "sha256:296a79239bf943a7ea72296ae685fe422a5813c41e353c5d363a78aa9a7e5220",
   "quantization": "int8-dynamic",
   "inputs": [
     {
@@ -22,6 +22,11 @@
         3
       ]
     }
+  ],
+  "labels": [
+    "low",
+    "mid",
+    "high"
   ],
   "goldens": [
     {

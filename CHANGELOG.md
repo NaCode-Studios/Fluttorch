@@ -28,8 +28,8 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
   implements the ABI against ExecuTorch's `Module`, and `tool/build_native.sh` links it
   against a checkout into a shared library. On this machine a model quantized with
   `int8-dynamic` by our own exporter loads through it on XNNPACK, and all four of its
-  goldens land inside the tolerance the recipe starts from, with a drift between
-  `1.4e-3` and `3.0e-3`. Held to the full-precision bound instead, the same run fails
+  goldens land inside the tolerance the recipe starts from, drifting between `2.4e-3`
+  and `4.1e-2` relative. Held to the full-precision bound instead, the same run fails
   every case, which is what makes the first result mean something.
 - The exporter lowers for Core ML as well as XNNPACK (M21), an artifact says which one it
   was lowered for, and the Core ML runtime now links and executes. A Core ML `.pte` from
@@ -45,12 +45,22 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
   containing them. `tool/build_native.sh` links Core ML where the checkout can supply it,
   says which of the two it did, and records the four upstream frictions so the next
   person does not rediscover them one build at a time.
-- Core ML exports are pinned to float32 (M21). Core ML converts to float16 by default and
-  the manifest has no field that records a precision, so an artifact lowered on that
-  default answers to a full-precision bound it cannot hold: on the two-layer model that
-  is drift of up to `9.7e-2` against references the source model produced. Pinning keeps
-  the manifest true to the artifact it describes. Recording the precision instead, so a
-  float16 export can be gated at a bound that fits it, is on the board.
+- The manifest records the compute precision a delegate was lowered at, and Core ML and
+  MPS ship at the float16 they run by default. The two are one change: a recipe says how
+  the weights were stored and a precision says what the delegate does arithmetic in, and
+  a backend can halve the second while leaving the first alone. Without the field an
+  artifact lowered at half precision answered to a full-precision bound it could not hold,
+  so the gate failed a model doing exactly what it was told. Absence still means float32,
+  which is what a reader without the field assumed anyway.
+- The tolerance table sizes a bound from the precision as well as the recipe, and the two
+  compound rather than replace: an int8 model on a half-precision GPU is wrong in both
+  ways at once. Float16's starting point is `2e-2` relative rather than the small multiple
+  of its `4.9e-4` epsilon that looks right. A gate sees outputs while rounding happens on
+  intermediates, so feeding this project's model an input of magnitude `1e3` puts its
+  intermediates where float16 spacing is about `0.5` while one output element lands near
+  `9.4`, and a case well inside float16's documented accuracy still shows `1e-2` relative.
+  It stays inside the `5e-2` an int8 recipe is given, which keeps the two distinguishable,
+  and a float16 export held to the float32 bound still fails every case.
 - The two backends differ in what they can promise, and the binding says so per backend
   rather than per build. XNNPACK on a single-threaded pool fixes the order of every
   reduction; Core ML chooses between the Neural Engine and the GPU and promises no such
@@ -76,6 +86,65 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
   export that makes attribution possible: no partitioner, every operation in the
   runtime's own kernels. Slower than any delegate and not what a device would ship,
   which is the point of having it separately.
+- The exporter knows eight backends and reports which of them a given machine can
+  actually lower for (M23). `available_backends()` answers by lowering a one-operation
+  model rather than by importing a partitioner. Metal is the reason: its partitioner
+  constructs on any Mac and then fails during preprocessing, looking for a torchao dylib
+  whose build flag it never names. A list built from imports would call Metal available
+  and be wrong exactly where it mattered.
+- A backend a machine cannot lower for is refused with the piece that is missing (M23),
+  rather than with the error from three libraries down. An absent Qualcomm SDK surfaces
+  upstream as an `ImportError` about a Python package nobody asked for, and Metal as a
+  filename with no flag attached. Both now name the toolchain, and the original failure
+  stays attached to the message.
+- MPS runs (M23). A model lowered for it loads through this binding on an M-series Mac
+  and all four of its goldens hold at the full-precision bound, which makes it the third
+  backend measured rather than described. It refuses deterministic execution instead of
+  promising it, because a GPU does not undertake to schedule work the same way twice.
+- `tool/build_native.sh` links whichever delegates the checkout built and names the ones
+  it did not (M23). Skipping is the designed outcome rather than a degraded one: a
+  machine that never built Vulkan should get a library reporting that it cannot run
+  Vulkan, not one that fails to link or claims a backend it lacks.
+- `portable` is a backend the runtime reports rather than an absence a caller infers, and
+  the backend an unpinned load takes is now named in one place. It used to be whichever
+  entry stood first in the table, which was harmless at two entries and became a way to
+  change what every unpinned load runs by editing a list.
+- One report covers every backend a machine offers (M24). `measureMatrix` replays one set
+  of goldens across several loaded models and returns a table, rows by golden and columns
+  by backend, each cell measured at the tolerance that export's own recipe implies. An
+  int8 export and a float32 one of the same model are not wrong by the same amount, and a
+  single bound would either excuse the second or condemn the first. Entries whose goldens
+  do not line up are refused rather than tabulated, because a matrix over different inputs
+  is a set of unrelated numbers arranged to look like a comparison.
+- `dart run tool/parity_matrix.dart` prints that report and exits non-zero when a cell
+  fails. On this machine it covers four backends across four goldens: three carry the
+  model at float32 and agree with the source to within `1e-7` relative, and the one
+  carrying it at `int8-dynamic` moves by up to `4.1e-2`. A table whose columns all read
+  the same would mean the quantized artifact was not quantized. Backends the build lacks
+  are listed as not run rather than omitted, since an absent column and an agreeing column
+  look identical once a table is printed.
+- Backend claims are checked on hardware, or recorded as not checked (M25). The `Backends`
+  workflow runs the export suite on a Linux runner, which keeps the two halves of a
+  backend claim apart: that runner lowers for Core ML and MPS, which it could never run,
+  and refuses Metal, MLX and QNN by naming the toolchain each would need. The `On device` workflow builds ExecuTorch on an
+  Apple silicon runner and runs the parity matrix there, weekly and on demand rather than
+  on every push, because a gate that takes the better part of an hour on every push is one
+  somebody eventually routes around. `docs/backend-coverage.md` records which half of each
+  backend's claim is verified where, and which are not run at all.
+
+### Fixed
+
+- The goldens under `testdata/quantized/` were not the ones the sample model produces.
+  They carried different inputs, random draws rather than the four cases chosen for what
+  they exercise, and their reference outputs did not match the source model on those
+  inputs either. The bundle was internally consistent, so the gate passed, and it was
+  measuring an artifact against references no current code produces. Regenerated, and the
+  four exports now share byte-identical references, which is what let the matrix compare
+  them at all.
+- The quantized suite's upper bound on drift is relative rather than absolute. It asked
+  for `maxAbsolute < 0.01` across goldens whose outputs range from about `0.1` to about
+  `175`, which is six significant figures out of int8 on the widest case and no constraint
+  at all on the narrowest.
 - `NativeExecuTorchBindings` binds that ABI over `dart:ffi`, and is tested against a
   C library the suite compiles and calls. A Dart fake cannot check struct field
   offsets, arrays of strings or pointer arithmetic over tensor arrays, because a

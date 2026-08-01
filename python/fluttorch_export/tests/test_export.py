@@ -18,7 +18,9 @@ torch = pytest.importorskip("torch", reason="the export half needs the torch too
 pytest.importorskip("executorch", reason="the export half needs executorch")
 
 from fluttorch_export.export import (  # noqa: E402
+    BACKENDS,
     ExportError,
+    available_backends,
     export_model,
     resolve,
 )
@@ -182,17 +184,69 @@ class TestGoldens:
             )
 
 
-class TestRefusals:
-    def test_an_unavailable_backend_lists_the_ones_that_work(self, tmp_path: pathlib.Path) -> None:
+class TestBackends:
+    """M23 · every backend says what it can do, and what it would need."""
+
+    def test_an_unknown_backend_lists_the_ones_this_exporter_knows(
+        self, tmp_path: pathlib.Path
+    ) -> None:
         with pytest.raises(ExportError, match="xnnpack"):
             export_model(
                 model=sample_model.build(),
                 example_inputs=sample_model.example_inputs(),
                 out_dir=tmp_path,
-                name="vulkan",
-                backend="vulkan",
+                name="tpu",
+                backend="tpu",
             )
 
+    def test_available_backends_is_a_subset_that_always_has_the_two_that_need_nothing(
+        self,
+    ) -> None:
+        available = available_backends()
+        assert set(available) <= set(BACKENDS)
+        # These delegate to nothing and to a CPU library respectively, so a
+        # machine that can run this suite at all can lower for both.
+        assert {"portable", "xnnpack"} <= set(available)
+
+    def test_a_backend_this_machine_lacks_says_what_it_would_need(
+        self, tmp_path: pathlib.Path
+    ) -> None:
+        missing = [b for b in BACKENDS if b not in available_backends()]
+        if not missing:
+            pytest.skip("this machine lowers for every backend the exporter knows")
+
+        # Named rather than generic. An ImportError from three libraries down
+        # says a package nobody asked for is absent; this says which piece of
+        # which toolchain, so a caller can install it or pick another backend.
+        with pytest.raises(ExportError, match="needs"):
+            export_model(
+                model=sample_model.build(),
+                example_inputs=sample_model.example_inputs(),
+                out_dir=tmp_path,
+                name="absent",
+                backend=missing[0],
+            )
+
+    def test_every_backend_this_machine_has_lowers_the_sample_model(
+        self, tmp_path: pathlib.Path
+    ) -> None:
+        # Parameterised over the machine rather than over a fixed list, which is
+        # what degrading rather than failing means here: the same suite is green
+        # on a laptop with four delegates and on CI with one.
+        for backend in available_backends():
+            result = export_model(
+                model=sample_model.build(),
+                example_inputs=sample_model.example_inputs(),
+                out_dir=tmp_path / backend,
+                name="two_layer",
+                backend=backend,
+                golden_inputs=sample_model.golden_cases(),
+            )
+            assert result.artifact.stat().st_size > 0, backend
+            assert result.golden_count == len(sample_model.golden_cases()), backend
+
+
+class TestRefusals:
     def test_core_ml_lowers_and_the_manifest_says_so(self, tmp_path: pathlib.Path) -> None:
         # An artifact is lowered for one delegate, so which backend ran a number
         # is a property of the export and not of the device it landed on.
@@ -330,6 +384,41 @@ class TestTaps:
         # mean two layers were resolved to one tensor.
         assert len(set(handles)) == 3
         assert list(handles) == sorted(handles)
+
+    def test_a_half_precision_backend_records_that_it_is(self, tmp_path) -> None:
+        # The manifest saying nothing used to mean float32, and Core ML lowering
+        # at float16 made that untrue: the artifact answered to a bound it could
+        # not hold and the gate failed a model doing what it was told.
+        if "coreml" not in available_backends():
+            pytest.skip("this machine cannot lower for Core ML")
+
+        result = export_model(
+            model=sample_model.build(),
+            example_inputs=sample_model.example_inputs(),
+            out_dir=tmp_path / "half",
+            name="two_layer",
+            backend="coreml",
+            golden_inputs=sample_model.golden_cases(),
+        )
+
+        assert result.manifest.precision == "float16"
+        assert result.manifest.quantization is None
+        assert result.manifest.to_dict()["precision"] == "float16"
+
+    def test_a_full_precision_backend_says_nothing_about_precision(self, tmp_path) -> None:
+        # Absence is how float32 is written, so a manifest from before the field
+        # existed keeps meaning what it always meant.
+        result = export_model(
+            model=sample_model.build(),
+            example_inputs=sample_model.example_inputs(),
+            out_dir=tmp_path / "full",
+            name="two_layer",
+            backend="xnnpack",
+            golden_inputs=sample_model.golden_cases(),
+        )
+
+        assert result.manifest.precision is None
+        assert "precision" not in result.manifest.to_dict()
 
     def test_a_delegated_export_refuses_taps_it_could_never_answer(self, tmp_path) -> None:
         # The export side alone would succeed. It is the device side that cannot,
