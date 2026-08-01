@@ -11,6 +11,11 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
 
 ### Fixed
 
+- The linked artifact records are no longer skipped when the attestation fails, and
+  they name the repository when the endpoint cannot work it out. It resolves which
+  repository built an artifact from the artifact's attestation, so an archive without
+  one has nothing to resolve and the write answers "no artifacts found" until the
+  repository is named outright. Both were found by the first tag that published.
 - Compiled Python is no longer committed. Nineteen `.pyc` files were tracked, each
   carrying the absolute path of the machine that built it, and `.gitignore` had no
   Python section at all, so they returned every time anyone ran the suite. They stay

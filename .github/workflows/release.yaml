@@ -186,10 +186,12 @@ jobs:
   #
   # The API documents no DELETE, so a record is permanent and a duplicate cannot
   # be cleaned up: check before writing.
-  # It runs after the attestation, because the green check on that page comes from
-  # the attestation and the record is what the check attaches to.
+  # Not downstream of the attestation. The check on that page comes from the
+  # attestation and attaches to the record by digest, in whichever order the two
+  # arrive, and an attestation this plan may refuse must not take the metadata
+  # with it.
   link-artifacts:
-    needs: attest
+    needs: [publish-core, publish-gen, publish-test]
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
@@ -212,14 +214,18 @@ jobs:
               echo "already recorded: $pkg $ver"
               continue
             fi
-            gh api -X POST "/orgs/${GITHUB_REPOSITORY_OWNER}/artifacts/metadata/storage-record" \
-              -H "X-GitHub-Api-Version: 2026-03-10" \
-              -f name="$pkg" \
-              -f version="$ver" \
-              -f digest="sha256:$sha" \
-              -f registry_url="https://pub.dev/" \
-              -f artifact_url="$url" \
-              -f status="active" \
-              --silent && echo "recorded $pkg $ver" \
+            # Two forms, because the endpoint resolves which repository built
+            # the artifact from its attestation, and an archive without one has
+            # nothing to resolve: it answers "no artifacts found" until the
+            # repository is named outright. The bare name is required; the
+            # owner/repo form is rejected.
+            record() {
+              gh api -X POST "/orgs/${GITHUB_REPOSITORY_OWNER}/artifacts/metadata/storage-record" \
+                -H "X-GitHub-Api-Version: 2026-03-10" \
+                -f name="$pkg" -f version="$ver" -f digest="sha256:$sha" \
+                -f registry_url="https://pub.dev/" -f artifact_url="$url" \
+                -f status="active" "$@" --silent
+            }
+            record || record -f github_repository="${GITHUB_REPOSITORY#*/}" \
               || echo "::warning::could not record $pkg $ver"
           done
