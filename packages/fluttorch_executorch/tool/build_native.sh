@@ -33,6 +33,12 @@
 # up with and says so, one line per backend, so a library that turns out to lack
 # one says which rather than leaving it to be discovered at load.
 #
+# Before any of that, run tool/prepare_executorch.sh once against the checkout.
+# It carries the workarounds this binding needs and upstream does not have: the
+# Core ML protobuf sources, and the flatc that has to run on the build machine
+# rather than on the phone. Each is scripted rather than described, because a
+# workaround in a comment is one the next clone does not have.
+#
 # Core ML is linked when the checkout carries it and skipped when it does not, so
 # a contributor who has only built XNNPACK still gets a library. Getting it means
 # adding -DEXECUTORCH_BUILD_COREML=ON -DEXECUTORCH_BUILD_DEVTOOLS=ON to the
