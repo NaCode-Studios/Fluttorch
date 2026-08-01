@@ -134,11 +134,26 @@ def _lower(
     backend: str,
     recipe: Recipe | None = None,
     calibration: Sequence[tuple[torch.Tensor, ...]] = (),
-) -> bytes:
-    """Trace, quantize if a recipe was named, lower and serialise."""
+) -> tuple[bytes, dict[str, int]]:
+    """Trace, quantize if a recipe was named, lower and serialise.
+
+    Returns the artifact and, for each submodule the lowered graph still executes
+    as ops, the debug handle of the last one it runs. That last op is what the
+    submodule emits, which is the same tensor a forward hook would have caught,
+    so the two sides of a tap describe one value.
+
+    The map is empty for a delegated backend, and that is the honest answer
+    rather than a gap: a delegate is one instruction, and nothing inside it is
+    addressable from the runtime.
+    """
     from executorch.exir import to_edge_transform_and_lower
 
-    if backend == "xnnpack":
+    if backend == "portable":
+        # No partitioner, so every op stays in the runtime's own kernels. Slower
+        # than any delegate and not what a device would ship, which is the point:
+        # this is the export you run to find out which layer moved the numbers.
+        partitioner = None
+    elif backend == "xnnpack":
         from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
             XnnpackPartitioner,
         )
@@ -169,7 +184,7 @@ def _lower(
     else:
         raise ExportError(
             f"backend {backend!r} is not available; this build lowers for "
-            "'xnnpack' and 'coreml', and M23 adds the rest."
+            "'portable', 'xnnpack' and 'coreml', and M23 adds the rest."
         )
 
     exported = torch.export.export(model, example)
@@ -194,8 +209,33 @@ def _lower(
             raise ExportError(_convert_failure(recipe, e)) from e
         exported = torch.export.export(converted, example)
 
-    lowered = to_edge_transform_and_lower(exported, partitioner=[partitioner]).to_executorch()
-    return bytes(lowered.buffer)
+    lowered = to_edge_transform_and_lower(
+        exported, partitioner=None if partitioner is None else [partitioner]
+    ).to_executorch()
+    return bytes(lowered.buffer), _handles_by_module(lowered)
+
+
+def _handles_by_module(lowered: Any) -> dict[str, int]:
+    """The debug handle of the last op each submodule still runs, by module path.
+
+    Read off the lowered graph rather than the source model, because lowering is
+    what decides whether a layer survives as ops at all. A delegated partition
+    collapses to one instruction carrying no module path, so it contributes
+    nothing here and the layers inside it are simply not addressable.
+    """
+    handles: dict[str, int] = {}
+    for node in lowered.exported_program().graph_module.graph.nodes:
+        handle = node.meta.get("debug_handle")
+        if handle is None:
+            continue
+        stack = node.meta.get("nn_module_stack") or {}
+        paths = [entry[0] for entry in stack.values() if entry and entry[0]]
+        if not paths:
+            continue
+        # Later nodes overwrite earlier ones, so what survives is the last op the
+        # submodule runs, which is the tensor it hands on.
+        handles[paths[-1]] = int(handle)
+    return handles
 
 
 def _convert_failure(recipe: Recipe, error: Exception) -> str:
@@ -267,7 +307,7 @@ def export_model(
     if recipe is not None:
         check_calibration(recipe, cases_in)
 
-    buffer = _lower(model, example, backend, recipe=recipe, calibration=cases_in)
+    buffer, graph_handles = _lower(model, example, backend, recipe=recipe, calibration=cases_in)
 
     out_dir = pathlib.Path(out_dir)
     golden_dir = out_dir / "goldens"
@@ -278,6 +318,7 @@ def export_model(
 
     taps = tuple(taps or ())
     activations = _tap_specs(model, taps, cases_in[0], dynamic_batch)
+    activation_handles = _tap_handles(taps, graph_handles, backend)
 
     cases = _capture_goldens(
         model=model,
@@ -298,6 +339,7 @@ def export_model(
         labels=tuple(labels) if labels is not None else None,
         goldens=cases,
         activations=activations,
+        activation_handles=activation_handles,
     )
 
     manifest_path = out_dir / f"{name}.fluttorch.json"
@@ -370,6 +412,33 @@ def _tap_specs(
             shape[0] = DYNAMIC_DIM
         specs.append(TensorSpec(name, _wire_dtype(tensor, "activation", i), tuple(shape)))
     return tuple(specs)
+
+
+def _tap_handles(
+    taps: tuple[str, ...],
+    graph_handles: dict[str, int],
+    backend: str,
+) -> tuple[int, ...]:
+    """Resolve each tap to the handle the device will see it under.
+
+    Refused rather than half-filled when the lowered graph does not run the layer
+    as ops. A bundle that declares a tap the device can never answer for reports
+    that layer absent on every run, which reads as a layer nobody looked at and is
+    indistinguishable from one that agreed.
+    """
+    if not taps:
+        return ()
+
+    unobservable = [t for t in taps if t not in graph_handles]
+    if unobservable:
+        raise ExportError(
+            f"the lowered graph does not execute {', '.join(repr(t) for t in unobservable)} "
+            f"as operations, so nothing on the device can read it back. Lowering for "
+            f"{backend!r} hands whole partitions to the delegate, and a delegate is one "
+            f"instruction: no layer inside it is addressable. Export with "
+            f"backend='portable' to attribute a drift, then lower for {backend!r} to ship it."
+        )
+    return tuple(graph_handles[t] for t in taps)
 
 
 def _run_with_taps(

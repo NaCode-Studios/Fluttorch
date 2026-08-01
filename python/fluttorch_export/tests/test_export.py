@@ -292,6 +292,7 @@ class TestTaps:
             example_inputs=sample_model.example_inputs(),
             out_dir=tmp_path / "taps",
             name="two_layer",
+            backend="portable",
             golden_inputs=sample_model.golden_cases(),
             taps=["fc1", "act", "fc2"],
         )
@@ -309,6 +310,41 @@ class TestTaps:
                 written = result.golden_dir / key
                 assert written.exists()
                 assert written.stat().st_size == spec.byte_length_for(spec.shape)
+
+    def test_each_tap_carries_the_handle_the_device_reads_it_by(self, tmp_path) -> None:
+        # Submodule names do not survive lowering, so the bundle has to say where
+        # each tap ended up or the device has nothing to ask for.
+        result = export_model(
+            model=sample_model.build(),
+            example_inputs=sample_model.example_inputs(),
+            out_dir=tmp_path / "handles",
+            name="two_layer",
+            backend="portable",
+            golden_inputs=sample_model.golden_cases(),
+            taps=["fc1", "act", "fc2"],
+        )
+
+        handles = result.manifest.activation_handles
+        assert len(handles) == len(result.manifest.activations)
+        # Distinct, and ascending in the order the graph runs them: a repeat would
+        # mean two layers were resolved to one tensor.
+        assert len(set(handles)) == 3
+        assert list(handles) == sorted(handles)
+
+    def test_a_delegated_export_refuses_taps_it_could_never_answer(self, tmp_path) -> None:
+        # The export side alone would succeed. It is the device side that cannot,
+        # and a bundle promising attribution nobody can deliver is worse than one
+        # that says it does not do attribution.
+        with pytest.raises(ExportError, match="portable"):
+            export_model(
+                model=sample_model.build(),
+                example_inputs=sample_model.example_inputs(),
+                out_dir=tmp_path / "delegated",
+                name="two_layer",
+                backend="xnnpack",
+                golden_inputs=sample_model.golden_cases(),
+                taps=["fc1", "act", "fc2"],
+            )
 
     def test_an_unknown_submodule_lists_the_ones_there_are(self, tmp_path) -> None:
         with pytest.raises(ExportError, match="fc1"):
