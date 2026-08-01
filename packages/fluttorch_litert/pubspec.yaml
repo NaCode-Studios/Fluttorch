@@ -1,0 +1,26 @@
+name: fluttorch_litert
+description: >-
+  Runs models exported by fluttorch-export through LiteRT, measured by the same
+  parity gate that measures every other backend.
+version: 0.6.0-dev
+repository: https://github.com/NaCode-Studios/Fluttorch
+issue_tracker: https://github.com/NaCode-Studios/Fluttorch/issues
+publish_to: none
+resolution: workspace
+
+environment:
+  sdk: ^3.9.0
+
+dependencies:
+  ffi: ^2.1.0
+  fluttorch: ^0.5.0
+  # For the binding to the C ABI, not for ExecuTorch. The ABI is one contract
+  # and two runtimes implement it, so the Dart side that speaks it is shared
+  # rather than written twice. Its name still says ExecuTorch, which is a thing
+  # to fix rather than a thing to duplicate around.
+  fluttorch_executorch: ^0.5.0
+
+dev_dependencies:
+  fluttorch_test: ^0.5.0
+  lints: ^6.0.0
+  test: ^1.25.0

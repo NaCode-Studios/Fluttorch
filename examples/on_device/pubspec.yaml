@@ -1,0 +1,46 @@
+name: fluttorch_on_device
+description: >-
+  Runs a model through Fluttorch's own binding on a phone, and holds it to the
+  goldens the export captured. The evidence for every claim this project makes
+  about a device rather than a laptop.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.9.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  fluttorch:
+    path: ../../packages/fluttorch
+  fluttorch_executorch:
+    path: ../../packages/fluttorch_executorch
+  fluttorch_executorch_flutter:
+    path: ../../packages/fluttorch_executorch_flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+  fluttorch_test:
+    path: ../../packages/fluttorch_test
+  lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/
+
+# Outside the workspace, for the same reason the plugin is: flutter_test pins
+# test_api to what the SDK ships and the Dart packages here use a current test.
+dependency_overrides:
+  fluttorch:
+    path: ../../packages/fluttorch
+  fluttorch_executorch:
+    path: ../../packages/fluttorch_executorch
+  fluttorch_executorch_flutter:
+    path: ../../packages/fluttorch_executorch_flutter
+  fluttorch_test:
+    path: ../../packages/fluttorch_test

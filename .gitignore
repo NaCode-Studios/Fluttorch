@@ -48,3 +48,9 @@ __pycache__/
 # Local Python environment for the export half. torch and executorch are
 # several gigabytes and belong to the machine, not to the repository.
 .venv/
+
+# The cross-compiled binding, written here by tool/build_native.sh --android.
+# 61 MB of build output that every machine reproduces from the same script, so
+# committing it would put a binary in the history that nobody can diff.
+packages/fluttorch_executorch_flutter/android/src/main/jniLibs/**/*.so
+packages/fluttorch_executorch_flutter/ios/**/*.xcframework/

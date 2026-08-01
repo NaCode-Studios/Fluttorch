@@ -246,6 +246,80 @@ class TestBackends:
             assert result.golden_count == len(sample_model.golden_cases()), backend
 
 
+class TestRuntimes:
+    """M27 · an artifact says which engine executes it."""
+
+    def test_an_onnx_export_says_so_and_writes_a_onnx(self, tmp_path) -> None:
+        pytest.importorskip("onnxscript", reason="the ONNX export needs onnxscript")
+        result = export_model(
+            model=sample_model.build(),
+            example_inputs=sample_model.example_inputs(),
+            out_dir=tmp_path / "onnx",
+            name="two_layer",
+            runtime="onnx",
+            golden_inputs=sample_model.golden_cases(),
+            input_names=["features"],
+            output_names=["score"],
+        )
+
+        assert result.artifact.suffix == ".onnx"
+        assert result.manifest.runtime == "onnx"
+        assert result.manifest.to_dict()["runtime"] == "onnx"
+        assert result.golden_count == len(sample_model.golden_cases())
+
+    def test_an_executorch_export_says_nothing_about_its_runtime(self, tmp_path) -> None:
+        # Absence is how ExecuTorch is written, so a manifest from before the
+        # field keeps meaning what it meant.
+        result = export_model(
+            model=sample_model.build(),
+            example_inputs=sample_model.example_inputs(),
+            out_dir=tmp_path / "et",
+            name="two_layer",
+            golden_inputs=sample_model.golden_cases(),
+        )
+
+        assert result.artifact.suffix == ".pte"
+        assert result.manifest.runtime is None
+        assert "runtime" not in result.manifest.to_dict()
+
+    def test_onnx_refuses_a_recipe_that_describes_another_runtime(self, tmp_path) -> None:
+        # The recipes are built on ExecuTorch's XNNPACK quantizer, so naming one
+        # for an ONNX export would put a word in the manifest that describes a
+        # lowering nobody performed.
+        with pytest.raises(ExportError, match="XNNPACK"):
+            export_model(
+                model=sample_model.build(),
+                example_inputs=sample_model.example_inputs(),
+                out_dir=tmp_path / "q",
+                name="two_layer",
+                runtime="onnx",
+                golden_inputs=sample_model.golden_cases(),
+                quantization="int8-dynamic",
+            )
+
+    def test_onnx_refuses_taps_it_has_no_handles_for(self, tmp_path) -> None:
+        with pytest.raises(ExportError, match="portable"):
+            export_model(
+                model=sample_model.build(),
+                example_inputs=sample_model.example_inputs(),
+                out_dir=tmp_path / "t",
+                name="two_layer",
+                runtime="onnx",
+                golden_inputs=sample_model.golden_cases(),
+                taps=["fc1"],
+            )
+
+    def test_an_unknown_runtime_lists_the_ones_it_writes_for(self, tmp_path) -> None:
+        with pytest.raises(ExportError, match="executorch"):
+            export_model(
+                model=sample_model.build(),
+                example_inputs=sample_model.example_inputs(),
+                out_dir=tmp_path / "n",
+                name="two_layer",
+                runtime="tflite",
+            )
+
+
 class TestRefusals:
     def test_core_ml_lowers_and_the_manifest_says_so(self, tmp_path: pathlib.Path) -> None:
         # An artifact is lowered for one delegate, so which backend ran a number
@@ -301,13 +375,20 @@ class TestQuantization:
         # whose manifest forgot it is one the gate cannot judge.
         assert f'"quantization": "{recipe}"' in result.manifest_path.read_text()
 
-    def test_int8_static_names_the_toolchain_that_cannot_convert_it(self, tmp_path) -> None:
-        # torchao introspects an operator overload that torch 2.13 does not
-        # expose, before the model is involved. Asserting the translated message
-        # rather than skipping keeps the failure visible: the day the toolchain
-        # is fixed, this test fails and the entry describing it is removed.
-        with pytest.raises(ExportError, match="cannot be converted by the installed"):
-            export_model(
+    def test_int8_static_either_exports_or_names_the_toolchain(self, tmp_path) -> None:
+        # Whether this recipe converts is a property of the torch a machine
+        # resolved, not of this repository. torchao introspects an operator
+        # overload that torch 2.13 does not expose, before the model is involved,
+        # and 2.12 does. Both versions are reachable: litert-torch pins below 2.13
+        # and executorch has no upper bound, and which one pip picks differs by
+        # platform, so a macOS checkout converts it and a Linux runner does not.
+        #
+        # Asserting either outcome universally is asserting something about one
+        # machine. What holds everywhere is that it converts and says so, or
+        # refuses and names the combination at fault: a bare crash or a manifest
+        # that forgot the recipe fails this either way.
+        try:
+            result = export_model(
                 model=sample_model.build(),
                 example_inputs=sample_model.example_inputs(),
                 out_dir=tmp_path / "static",
@@ -315,6 +396,13 @@ class TestQuantization:
                 golden_inputs=sample_model.golden_cases(),
                 quantization="int8-static",
             )
+        except ExportError as e:
+            assert "cannot be converted by the installed toolchain" in str(e)
+            assert "torch" in str(e)
+            return
+
+        assert result.manifest.quantization == "int8-static"
+        assert result.artifact.stat().st_size > 0
 
     def test_a_static_recipe_refuses_a_single_case(self, tmp_path) -> None:
         with pytest.raises(QuantizationError, match="represent the job"):

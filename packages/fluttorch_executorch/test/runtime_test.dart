@@ -353,4 +353,39 @@ void main() {
       );
     });
   });
+
+  group('M27 · the runtime a bundle was written for', () {
+    test(
+      'an artifact for another engine is refused before it is loaded',
+      () async {
+        // A .onnx satisfies the weight hash, because the hash was computed over
+        // whichever artifact was written, and then fails somewhere in ExecuTorch's
+        // loader with a message about bytes.
+        final manifest = _manifest().copyForRuntime('onnx');
+        await expectLater(
+          ExecuTorchRuntime(
+            FakeBindings(),
+          ).load(artifact: _artifact, manifest: manifest),
+          throwsA(isA<BackendUnavailableException>()),
+        );
+      },
+    );
+  });
+}
+
+extension on ModelManifest {
+  /// The same manifest, rewritten for another engine.
+  ///
+  /// A copyWith would be a wider API than one test needs, and the manifest is
+  /// deliberately without one: it describes an export, and an export is not a
+  /// thing callers edit.
+  ModelManifest copyForRuntime(String runtime) => ModelManifest(
+    name: name,
+    schemaVersion: schemaVersion,
+    weightHash: weightHash,
+    inputs: inputs,
+    outputs: outputs,
+    runtime: runtime,
+    goldens: goldens,
+  );
 }

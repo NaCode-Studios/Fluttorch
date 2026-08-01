@@ -27,6 +27,7 @@ import torch
 
 from .manifest import (
     DYNAMIC_DIM,
+    RUNTIMES,
     GoldenCase,
     ManifestError,
     ModelManifest,
@@ -127,6 +128,79 @@ def _specs(
         name = names[i] if names and i < len(names) else f"{role}_{i}"
         out.append(TensorSpec(name, _wire_dtype(t, role, i), tuple(shape)))
     return tuple(out)
+
+
+#: Providers ONNX Runtime offers, as the backend field spells them. Written down
+#: rather than asked of onnxruntime at import time, because the list a machine
+#: reports is what that machine has installed and the manifest has to name
+#: something a different machine can also read.
+ONNX_PROVIDERS: tuple[str, ...] = (
+    "CPUExecutionProvider",
+    "CoreMLExecutionProvider",
+)
+
+
+def _lower_onnx(
+    model: torch.nn.Module,
+    example: tuple[torch.Tensor, ...],
+    out_path: pathlib.Path,
+    input_names: Sequence[str],
+    output_names: Sequence[str],
+) -> bytes:
+    """Export through torch.onnx and hand back the bytes.
+
+    Written to a file and read back because torch.onnx writes files, not
+    buffers. Everything else in this module returns bytes, and the artifact is
+    hashed and written once by the caller, so the round trip stays here rather
+    than making the caller learn which runtimes produce which.
+    """
+    try:
+        torch.onnx.export(
+            model,
+            example,
+            str(out_path),
+            input_names=list(input_names),
+            output_names=list(output_names),
+            dynamo=True,
+        )
+    except Exception as e:  # noqa: BLE001 - re-raised with what to do about it
+        raise ExportError(
+            f"the ONNX export failed ({type(e).__name__}: {str(e).strip()[:200]}). "
+            "It needs the onnx and onnxscript packages, which torch does not "
+            "install with itself."
+        ) from e
+    return out_path.read_bytes()
+
+
+def _lower_litert(
+    model: torch.nn.Module,
+    example: tuple[torch.Tensor, ...],
+    out_path: pathlib.Path,
+) -> bytes:
+    """Convert through litert_torch and hand back the bytes.
+
+    ``ai_edge_torch`` is a shim now: the converter moved to ``litert_torch`` and
+    the old module keeps only a deprecation warning, so importing the name a
+    tutorial gives you gets an AttributeError on ``convert`` rather than a
+    message saying where it went.
+    """
+    try:
+        import litert_torch
+    except ImportError as e:
+        raise ExportError(
+            "lowering for 'litert' needs litert-torch, which arrives with "
+            f"ai-edge-torch and is not installed here ({e}). Note that it pins "
+            "torch below 2.13, which is the version this project settles on for "
+            "that reason."
+        ) from e
+
+    try:
+        litert_torch.convert(model.eval(), example).export(str(out_path))
+    except Exception as e:  # noqa: BLE001 - re-raised with what to do about it
+        raise ExportError(
+            f"the LiteRT conversion failed ({type(e).__name__}: {str(e).strip()[:200]})"
+        ) from e
+    return out_path.read_bytes()
 
 
 #: Every backend this exporter knows, in the order a caller meets them: the one
@@ -434,6 +508,7 @@ def export_model(
     out_dir: pathlib.Path,
     name: str,
     backend: str = "xnnpack",
+    runtime: str = "executorch",
     golden_inputs: Iterable[Any] | Callable[[], Iterable[Any]] | None = None,
     preprocessing: Sequence[PreprocessingStep] = (),
     labels: Sequence[str] | None = None,
@@ -474,15 +549,56 @@ def export_model(
     if recipe is not None:
         check_calibration(recipe, cases_in)
 
-    buffer, graph_handles, precision = _lower(
-        model, example, backend, recipe=recipe, calibration=cases_in
-    )
+    if runtime not in RUNTIMES:
+        raise ExportError(
+            f"runtime {runtime!r} is not one this exporter knows; it writes for "
+            f"{', '.join(sorted(RUNTIMES))}"
+        )
 
     out_dir = pathlib.Path(out_dir)
     golden_dir = out_dir / "goldens"
     golden_dir.mkdir(parents=True, exist_ok=True)
 
-    artifact = out_dir / f"{name}.pte"
+    if runtime == "litert":
+        if recipe is not None:
+            raise ExportError(
+                "the quantization recipes are built on ExecuTorch's XNNPACK "
+                "quantizer, so they describe an ExecuTorch lowering and nothing "
+                "about a LiteRT one. LiteRT quantizes through its own converter."
+            )
+        if taps:
+            raise ExportError(
+                "taps address an intermediate by the debug handle ExecuTorch's "
+                "exporter emits, and a LiteRT graph carries no such handle. "
+                "Attribution needs runtime='executorch' with backend='portable'."
+            )
+        artifact = out_dir / f"{name}.tflite"
+        buffer = _lower_litert(model, example, artifact)
+        graph_handles, precision = {}, None
+    elif runtime == "onnx":
+        if recipe is not None:
+            raise ExportError(
+                "the quantization recipes are built on ExecuTorch's XNNPACK "
+                "quantizer, so they describe an ExecuTorch lowering and nothing "
+                "about an ONNX one. Export unquantized, or use runtime="
+                "'executorch'."
+            )
+        if taps:
+            raise ExportError(
+                "taps address an intermediate by the debug handle ExecuTorch's "
+                "exporter emits, and an ONNX graph carries no such handle. "
+                "Attribution needs runtime='executorch' with backend='portable'."
+            )
+        artifact = out_dir / f"{name}.onnx"
+        buffer = _lower_onnx(
+            model, example, artifact, [s.name for s in inputs], [s.name for s in outputs]
+        )
+        graph_handles, precision = {}, None
+    else:
+        buffer, graph_handles, precision = _lower(
+            model, example, backend, recipe=recipe, calibration=cases_in
+        )
+        artifact = out_dir / f"{name}.pte"
     artifact.write_bytes(buffer)
 
     taps = tuple(taps or ())
@@ -504,6 +620,7 @@ def export_model(
         inputs=inputs,
         outputs=outputs,
         quantization=quantization,
+        runtime=None if runtime == "executorch" else runtime,
         precision=precision,
         preprocessing=tuple(preprocessing),
         labels=tuple(labels) if labels is not None else None,

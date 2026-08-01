@@ -2,10 +2,10 @@
 library;
 
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:fluttorch/fluttorch.dart';
 import 'package:fluttorch_executorch/fluttorch_executorch.dart';
-import 'package:fluttorch_executorch/src/ffi.dart';
 import 'package:fluttorch_test/fluttorch_test.dart';
 import 'package:fluttorch_test/io.dart';
 import 'package:test/test.dart';
@@ -452,6 +452,82 @@ void main() {
       // A GPU schedules work it does not undertake to schedule the same way
       // twice. Saying so is worth more than a flag nobody can rely on.
       expect(model.capabilities.supportsDeterministicExecution, isFalse);
+    });
+  });
+
+  group('M28 · the same model, run off the calling isolate', () {
+    late IsolateExecuTorchRuntime runtime;
+    late DirectoryGoldenBundle goldens;
+    late LoadedModel model;
+
+    setUpAll(() async {
+      runtime = await IsolateExecuTorchRuntime.spawn(
+        libraryPath: _library.path,
+      );
+      goldens = await DirectoryGoldenBundle.open(
+        '${_quantized.path}/two_layer.fluttorch.json',
+      );
+      model = await runtime.load(
+        artifact: await File('${_quantized.path}/two_layer.pte').readAsBytes(),
+        manifest: goldens.manifest,
+        backend: 'xnnpack',
+      );
+    });
+
+    tearDownAll(() async {
+      await model.dispose();
+      await runtime.shutdown();
+    });
+
+    test('the native library was opened somewhere else', () async {
+      // The direct evidence available for the claim. FFI executes wherever it
+      // is called from, and only the worker holds the bindings, so a name that
+      // is not this isolate's is a native call that did not happen here.
+      final where = await runtime.whereNativeCallsRun();
+      expect(where, isNotNull);
+      expect(where, isNot(Isolate.current.debugName));
+    });
+
+    test('it reports the backends the library carries', () async {
+      final caps = await runtime.capabilities();
+      expect(caps.map((c) => c.backend), contains('xnnpack'));
+      expect(model.backend, 'xnnpack');
+    });
+
+    test('the goldens hold across the isolate hop', () async {
+      // The whole point: the numbers are the numbers whichever isolate produced
+      // them. A hop that quietly reordered or truncated bytes would show here
+      // and nowhere else.
+      await expectParity(model, goldens: goldens);
+    });
+
+    test('runInto writes into the buffers the caller owns', () async {
+      final input = await goldens.tensor(
+        goldens.cases.first.inputKeys.single,
+        goldens.manifest.inputs.single,
+      );
+      final output = Tensor.zeros(goldens.manifest.outputs.single);
+
+      await model.runInto(inputs: [input], outputs: [output]);
+
+      // Copied back across the hop rather than allocated fresh, which is the
+      // semantic runInto promises even where it cannot promise zero copies.
+      expect(output.asFloat32List().any((v) => v != 0), isTrue);
+    });
+
+    test('a failure keeps its type across the hop', () async {
+      // A typed refusal that arrived as a bare error would turn a condition the
+      // caller is meant to handle into one they cannot.
+      await expectLater(
+        runtime.load(
+          artifact: await File(
+            '${_quantized.path}/two_layer.pte',
+          ).readAsBytes(),
+          manifest: goldens.manifest,
+          backend: 'vulkan',
+        ),
+        throwsA(isA<BackendUnavailableException>()),
+      );
     });
   });
 }

@@ -1,0 +1,6 @@
+// The plugin vendors a static archive through CocoaPods, and Flutter's Swift
+// Package Manager integration claims the same module name. Until the plugin
+// carries a Package.swift, the two cannot both describe it.
+FLUTTER_SWIFT_PACKAGE_MANAGER=false
+#include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"
+#include "Generated.xcconfig"

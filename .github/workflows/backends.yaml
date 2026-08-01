@@ -31,8 +31,13 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
+      # All three converters, not just ExecuTorch's. They constrain each other:
+      # litert-torch pins torch below 2.13 and executorch has no upper bound, so
+      # installing them together is what decides the version, and installing one
+      # gives a runner a toolchain no developer has. That is not a detail: on
+      # torch 2.13 the int8-static recipe does not convert at all.
       - name: Install the export toolchain
-        run: pip install torch executorch pytest
+        run: pip install torch executorch ai-edge-torch onnx onnxscript pytest
       - name: What this runner can lower for
         run: |
           python - <<'PY'
@@ -41,6 +46,8 @@ jobs:
           print("known    :", ", ".join(BACKENDS))
           print("available:", ", ".join(available))
           print("not run  :", ", ".join(b for b in BACKENDS if b not in available))
+          import torch
+          print("torch    :", torch.__version__)
           PY
         env:
           PYTHONPATH: python/fluttorch_export

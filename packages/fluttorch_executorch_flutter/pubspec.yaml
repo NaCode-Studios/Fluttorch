@@ -1,0 +1,47 @@
+name: fluttorch_executorch_flutter
+description: >-
+  Ships the compiled ExecuTorch binding to a device. The Dart API lives in
+  fluttorch_executorch; this package is what puts its native half inside an app.
+version: 0.6.0-dev
+repository: https://github.com/NaCode-Studios/Fluttorch
+issue_tracker: https://github.com/NaCode-Studios/Fluttorch/issues
+publish_to: none
+
+# Outside the root workspace on purpose, as flutter_spike already is. A package
+# that depends on flutter_test pins test_api to whatever the Flutter SDK ships,
+# and the Dart packages here use a current `test`, so the two cannot share one
+# resolution. Keeping the Flutter side out is what lets both stay current.
+environment:
+  sdk: ^3.9.0
+  flutter: ">=3.27.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  fluttorch:
+    path: ../fluttorch
+  fluttorch_executorch:
+    path: ../fluttorch_executorch
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  lints: ^6.0.0
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: it.nacodestudios.fluttorch_executorch
+        pluginClass: FluttorchExecuTorchPlugin
+      ios:
+        pluginClass: FluttorchExecuTorchPlugin
+
+# This package sits outside the Dart workspace, so the workspace packages'
+# hosted constraints on each other cannot resolve until they are published.
+# Overrides point them at the source in this repository, as flutter_spike does.
+dependency_overrides:
+  fluttorch:
+    path: ../fluttorch
+  fluttorch_executorch:
+    path: ../fluttorch_executorch

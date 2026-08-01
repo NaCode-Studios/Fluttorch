@@ -1,0 +1,28 @@
+PODS:
+  - Flutter (1.0.0)
+  - fluttorch_executorch_flutter (0.6.0):
+    - Flutter
+  - integration_test (0.0.1):
+    - Flutter
+
+DEPENDENCIES:
+  - Flutter (from `Flutter`)
+  - fluttorch_executorch_flutter (from `.symlinks/plugins/fluttorch_executorch_flutter/ios`)
+  - integration_test (from `.symlinks/plugins/integration_test/ios`)
+
+EXTERNAL SOURCES:
+  Flutter:
+    :path: Flutter
+  fluttorch_executorch_flutter:
+    :path: ".symlinks/plugins/fluttorch_executorch_flutter/ios"
+  integration_test:
+    :path: ".symlinks/plugins/integration_test/ios"
+
+SPEC CHECKSUMS:
+  Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
+  fluttorch_executorch_flutter: 7fb8576baba455129597005f3571a2385d3553ce
+  integration_test: 4a889634ef21a45d28d50d622cf412dc6d9f586e
+
+PODFILE CHECKSUM: 953f9e39ce0c6dd911b00de41d70a1703f6aa87f
+
+COCOAPODS: 1.16.2
