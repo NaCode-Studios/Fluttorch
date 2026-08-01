@@ -76,6 +76,29 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
   export that makes attribution possible: no partitioner, every operation in the
   runtime's own kernels. Slower than any delegate and not what a device would ship,
   which is the point of having it separately.
+- The exporter knows eight backends and reports which of them a given machine can
+  actually lower for (M23). `available_backends()` answers by lowering a one-operation
+  model rather than by importing a partitioner. Metal is the reason: its partitioner
+  constructs on any Mac and then fails during preprocessing, looking for a torchao dylib
+  whose build flag it never names. A list built from imports would call Metal available
+  and be wrong exactly where it mattered.
+- A backend a machine cannot lower for is refused with the piece that is missing (M23),
+  rather than with the error from three libraries down. An absent Qualcomm SDK surfaces
+  upstream as an `ImportError` about a Python package nobody asked for, and Metal as a
+  filename with no flag attached. Both now name the toolchain, and the original failure
+  stays attached to the message.
+- MPS runs (M23). A model lowered for it loads through this binding on an M-series Mac
+  and all four of its goldens hold at the full-precision bound, which makes it the third
+  backend measured rather than described. It refuses deterministic execution instead of
+  promising it, because a GPU does not undertake to schedule work the same way twice.
+- `tool/build_native.sh` links whichever delegates the checkout built and names the ones
+  it did not (M23). Skipping is the designed outcome rather than a degraded one: a
+  machine that never built Vulkan should get a library reporting that it cannot run
+  Vulkan, not one that fails to link or claims a backend it lacks.
+- `portable` is a backend the runtime reports rather than an absence a caller infers, and
+  the backend an unpinned load takes is now named in one place. It used to be whichever
+  entry stood first in the table, which was harmless at two entries and became a way to
+  change what every unpinned load runs by editing a list.
 - `NativeExecuTorchBindings` binds that ABI over `dart:ffi`, and is tested against a
   C library the suite compiles and calls. A Dart fake cannot check struct field
   offsets, arrays of strings or pointer arithmetic over tensor arrays, because a

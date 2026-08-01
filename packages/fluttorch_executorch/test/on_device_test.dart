@@ -28,6 +28,7 @@ final _library = File(
 final _quantized = Directory('../../testdata/quantized');
 final _coreml = Directory('../../testdata/coreml');
 final _taps = Directory('../../testdata/taps');
+final _mps = Directory('../../testdata/mps');
 
 void main() {
   if (!_library.existsSync() || !_quantized.existsSync()) {
@@ -286,6 +287,48 @@ void main() {
           );
         }
       }
+    });
+  });
+
+  // Whether this build carries MPS is a property of the ExecuTorch checkout, so
+  // the library is asked. A machine that never built it gets a named skip rather
+  // than a failure, which is the whole of what M23 asks of a backend.
+  if (!bindings.backends().contains('mps') || !_mps.existsSync()) {
+    test('the MPS gate needs an ExecuTorch built with it', () {}, skip: true);
+    return;
+  }
+
+  group('M23 · the same model through MPS', () {
+    late DirectoryGoldenBundle goldens;
+    late LoadedModel model;
+
+    setUpAll(() async {
+      goldens = await DirectoryGoldenBundle.open(
+        '${_mps.path}/two_layer.fluttorch.json',
+      );
+      model = await ExecuTorchRuntime(bindings).load(
+        artifact: await File('${_mps.path}/two_layer.pte').readAsBytes(),
+        manifest: goldens.manifest,
+        backend: 'mps',
+      );
+    });
+
+    tearDownAll(() async => model.dispose());
+
+    test('it loads on the backend it was lowered for', () {
+      expect(model.backend, 'mps');
+    });
+
+    test('every golden holds at the full-precision bound', () async {
+      // Pinned to float32 at export for the reason Core ML is, so the bound the
+      // gate picks on its own is the one this artifact can answer to.
+      await expectParity(model, goldens: goldens);
+    });
+
+    test('it refuses determinism rather than promising it', () async {
+      // A GPU schedules work it does not undertake to schedule the same way
+      // twice. Saying so is worth more than a flag nobody can rely on.
+      expect(model.capabilities.supportsDeterministicExecution, isFalse);
     });
   });
 }

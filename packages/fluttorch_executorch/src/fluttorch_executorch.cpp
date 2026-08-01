@@ -34,14 +34,48 @@ namespace {
 // What this build can actually run, which is not what ExecuTorch supports: a
 // backend appears here only once it is both linked and registered, so the list a
 // caller reads is the list that will load rather than a menu of intentions.
+// "portable" is unconditional and first among equals: it names the absence of a
+// delegate rather than one of them, and the runtime's own kernels are linked
+// into every build of this library. An artifact lowered without a partitioner
+// runs there, which is what makes layer attribution possible at all.
 const char* const kBackends[] = {
+    "portable",
     "xnnpack",
 #if defined(FLUTTORCH_WITH_COREML)
     "coreml",
 #endif
+#if defined(FLUTTORCH_WITH_MPS)
+    "mps",
+#endif
+#if defined(FLUTTORCH_WITH_METAL)
+    "metal",
+#endif
+#if defined(FLUTTORCH_WITH_VULKAN)
+    "vulkan",
+#endif
+#if defined(FLUTTORCH_WITH_MLX)
+    "mlx",
+#endif
+#if defined(FLUTTORCH_WITH_QNN)
+    "qnn",
+#endif
 };
 constexpr int32_t kBackendCount =
     static_cast<int32_t>(sizeof(kBackends) / sizeof(kBackends[0]));
+
+// Named rather than positional. The default used to be whatever stood first in
+// the table, which was fine while the table had two entries and became a way to
+// change what an unpinned load runs by editing a list.
+constexpr const char* kDefaultBackend = "xnnpack";
+
+// Backends whose reduction order is fixed, so two runs of one input agree bit
+// for bit. Portable qualifies for the plainest reason: it is the runtime's own
+// kernels with nothing parallel underneath. XNNPACK qualifies on a
+// single-threaded pool. Every accelerator below schedules work it does not
+// promise to schedule the same way twice.
+bool is_deterministic(const char* name) {
+  return std::strcmp(name, "portable") == 0 || std::strcmp(name, "xnnpack") == 0;
+}
 
 thread_local std::string g_error;
 
@@ -219,7 +253,8 @@ ft_status_t ft_backends(const char** out_names, int32_t capacity,
 
 ft_status_t ft_capabilities(const char* backend, ft_capabilities_t* out) {
   if (out == nullptr) return fail(FT_ERROR_INVALID_ARGUMENT, "out is required");
-  const char* name = canonical_backend(backend == nullptr ? kBackends[0] : backend);
+  const char* name =
+      canonical_backend(backend == nullptr ? kDefaultBackend : backend);
   if (name == nullptr) {
     return fail(FT_ERROR_BACKEND_UNAVAILABLE,
                 "not compiled into this build of the binding");
@@ -229,7 +264,7 @@ ft_status_t ft_capabilities(const char* backend, ft_capabilities_t* out) {
   // to, and neither promises a fixed reduction order. XNNPACK on a single-thread
   // pool does, which is the difference between a tolerance measuring the model
   // and one absorbing the hardware's mood.
-  const bool is_xnnpack = std::strcmp(name, "xnnpack") == 0;
+
   // A property of the build, not of the backend: the tracer is compiled in or it
   // is not. Whether a given artifact answers is a separate question the run
   // reports per tap, because a delegated partition is opaque even to a build
@@ -241,7 +276,7 @@ ft_status_t ft_capabilities(const char* backend, ft_capabilities_t* out) {
 #endif
   // A single-threaded pool fixes the order of every parallel reduction, which is
   // what makes two runs of one input agree bit for bit.
-  out->supports_determinism = is_xnnpack ? 1 : 0;
+  out->supports_determinism = is_deterministic(name) ? 1 : 0;
   out->max_tensor_bytes = 0; // unknown, which is not the same as unlimited
   out->dtypes = kSupportedDtypes;
   return FT_OK;
@@ -255,7 +290,8 @@ ft_status_t ft_load(const uint8_t* artifact, int64_t length, const char* backend
   if (length <= 0) {
     return fail(FT_ERROR_ARTIFACT_UNREADABLE, "the artifact is empty");
   }
-  const char* name = canonical_backend(backend == nullptr ? kBackends[0] : backend);
+  const char* name =
+      canonical_backend(backend == nullptr ? kDefaultBackend : backend);
   if (name == nullptr) {
     return fail(FT_ERROR_BACKEND_UNAVAILABLE,
                 "not compiled into this build of the binding");
@@ -283,7 +319,7 @@ ft_status_t ft_load(const uint8_t* artifact, int64_t length, const char* backend
 
   // Loading here rather than lazily on the first run, so a bad artifact fails
   // where the caller can still choose another one.
-  if (deterministic != 0 && std::strcmp(name, "xnnpack") != 0) {
+  if (deterministic != 0 && !is_deterministic(name)) {
     return fail(FT_ERROR_CAPABILITY_UNAVAILABLE,
                 std::string("backend ") + name +
                     " cannot promise a repeatable reduction order");
