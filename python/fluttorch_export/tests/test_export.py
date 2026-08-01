@@ -309,6 +309,46 @@ class TestRuntimes:
                 taps=["fc1"],
             )
 
+    def test_onnx_refuses_a_model_whose_weights_left_the_graph(self, tmp_path) -> None:
+        pytest.importorskip("onnxscript", reason="the ONNX export needs onnxscript")
+
+        # Above a size torch.onnx decides on its own, the weights move into a
+        # sidecar. The bundle would then pass every check while carrying none of
+        # the numbers: the weight hash covers the graph file, and the runtime
+        # loads an artifact as bytes and cannot reach a file beside it.
+        class Big(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.fc = torch.nn.Linear(2048, 2048)
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return self.fc(x)
+
+        with pytest.raises(ExportError, match="sidecar"):
+            export_model(
+                model=Big().eval(),
+                example_inputs=torch.zeros(1, 2048),
+                out_dir=tmp_path / "big",
+                name="big",
+                runtime="onnx",
+            )
+
+    def test_an_onnx_bundle_carries_only_what_the_hash_covers(self, tmp_path) -> None:
+        pytest.importorskip("onnxscript", reason="the ONNX export needs onnxscript")
+        result = export_model(
+            model=sample_model.build(),
+            example_inputs=sample_model.example_inputs(),
+            out_dir=tmp_path / "clean",
+            name="two_layer",
+            runtime="onnx",
+            golden_inputs=sample_model.golden_cases(),
+        )
+
+        # torch.onnx writes an empty sidecar on every export. A file in a bundle
+        # is a thing a reader has to decide about, so it does not ship.
+        written = {p.name for p in result.artifact.parent.iterdir() if p.is_file()}
+        assert written == {"two_layer.onnx", "two_layer.fluttorch.json"}
+
     def test_an_unknown_runtime_lists_the_ones_it_writes_for(self, tmp_path) -> None:
         with pytest.raises(ExportError, match="executorch"):
             export_model(

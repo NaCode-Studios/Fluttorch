@@ -169,6 +169,35 @@ def _lower_onnx(
             "It needs the onnx and onnxscript packages, which torch does not "
             "install with itself."
         ) from e
+
+    # Above a size torch.onnx decides on its own, the weights leave the graph and
+    # land in a sidecar. Two things break at once and neither announces itself.
+    #
+    # The weight hash is computed over the artifact, which is then a few kilobytes
+    # of graph structure with the weights outside it: the pairing this whole
+    # contract rests on would cover everything except the numbers. And the runtime
+    # loads an artifact as bytes, so it could not reach the sidecar even if the
+    # manifest described it.
+    #
+    # Refused rather than written, because a bundle that passes every check and
+    # carries no weights is the exact failure this project exists to prevent.
+    sidecar = out_path.with_suffix(out_path.suffix + ".data")
+    if sidecar.exists() and sidecar.stat().st_size > 0:
+        size = sidecar.stat().st_size
+        sidecar.unlink()
+        out_path.unlink(missing_ok=True)
+        raise ExportError(
+            f"torch.onnx put {size} bytes of weights in a sidecar beside the "
+            "graph, and this toolchain cannot carry that: the weight hash would "
+            "cover the graph and not the weights, and the runtime loads an "
+            "artifact as bytes and cannot reach a file beside it. Export this "
+            "model with runtime='executorch' until external data is supported."
+        )
+    # An empty sidecar is written for every export and means the weights stayed
+    # in the graph. It is removed rather than shipped, because a file in a bundle
+    # is a thing a reader has to decide about.
+    sidecar.unlink(missing_ok=True)
+
     return out_path.read_bytes()
 
 

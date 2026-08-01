@@ -43,6 +43,18 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
 
 ### Fixed
 
+- An ONNX export whose weights left the graph is refused rather than written.
+  Above a size `torch.onnx` decides on its own, the weights move into a sidecar
+  beside the artifact, and two things break at once without announcing
+  themselves: the weight hash is computed over the artifact, which is then a few
+  kilobytes of graph structure with the numbers outside it, and the runtime loads
+  an artifact as bytes so it could not reach the sidecar anyway. A bundle that
+  passes every check and carries no weights is the failure this project exists to
+  prevent. The empty sidecar written for every export is removed rather than
+  shipped.
+
+
+
 - `int8-static` exports where the toolchain allows it, and says why where it does
   not. torchao introspects an operator overload torch 2.13 does not expose, before
   the model is involved, and 2.12 does. Both are reachable: `litert-torch` pins
