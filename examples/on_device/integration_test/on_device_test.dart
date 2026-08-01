@@ -75,6 +75,24 @@ void main() {
     // The claim, on the hardware. Same export, same references, same bound the
     // recipe implies, measured where it matters.
     await expectParity(model, goldens: goldens);
+
+    // And the numbers themselves, printed rather than only judged. "It passed"
+    // says the drift was under a bound; it does not say whether this device
+    // agrees with the machine that built the export, and those are different
+    // questions. The second one is the reason a parity matrix exists.
+    final reports = await measureParity(model, goldens: goldens);
+    for (final r in reports) {
+      final t = r.tensors.single;
+      // ignore: avoid_print
+      print(
+        'DRIFT ${r.goldenId} abs=${t.maxAbsolute.toStringAsExponential(2)} '
+        'rel=${t.maxRelative.toStringAsExponential(2)} '
+        'cos=${t.cosine.toStringAsFixed(6)}',
+      );
+    }
+    // Quantization moved the numbers here too. A device reporting none would be
+    // running something other than the artifact.
+    expect(reports.every((r) => r.tensors.single.maxRelative > 0), isTrue);
   });
 
   testWidgets('it also runs off the thread that draws', (_) async {

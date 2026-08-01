@@ -57,7 +57,10 @@
 set -euo pipefail
 
 TARGET=host
-if [ "${1:-}" = "--android" ]; then TARGET=android; shift; fi
+case "${1:-}" in
+  --android) TARGET=android; shift ;;
+  --ios)     TARGET=ios;     shift ;;
+esac
 
 ET="${1:-$HOME/.cache/fluttorch/executorch}"
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
@@ -79,19 +82,43 @@ if [ "$TARGET" = android ]; then
   }
   CXX_BIN="$NDK/toolchains/llvm/prebuilt/$(uname -s | tr '[:upper:]' '[:lower:]')-x86_64/bin/aarch64-linux-android26-clang++"
   force_load() { FORCE=(-Wl,--whole-archive "$1" -Wl,--no-whole-archive); }
+elif [ "$TARGET" = ios ]; then
+  OUT="$ET/cmake-out-ios"
+  CXX_BIN="$(xcrun --sdk iphoneos --find clang++)"
+  # Nothing is force-loaded into a static archive: everything goes in, and the
+  # app is what force-loads the result. See the podspec.
+  force_load() { FORCE=("$1"); }
 else
   OUT="$ET/cmake-out"
   CXX_BIN="${CXX:-c++}"
   force_load() { FORCE=(-Wl,-force_load,"$1"); }
 fi
 
-[ -f "$OUT/libexecutorch.a" ] || {
+# The Xcode generator puts each target's archive under its own subdirectory
+# rather than in one lib directory, so a path that works for a Makefile build
+# finds nothing here. Resolved by name instead of spelled out twice.
+archive() {
+  if [ "$TARGET" = ios ]; then
+    find "$OUT" -name "$1" -path '*Release-iphoneos*' 2>/dev/null | head -1
+  else
+    echo "$OUT/$2"
+  fi
+}
+
+[ -n "$(archive libexecutorch.a libexecutorch.a)" ] || {
   echo "no build under $OUT. Configure and build ExecuTorch first; the header of" >&2
   echo "this script carries the exact cmake invocation." >&2
   exit 1
 }
 
-if [ "$TARGET" = android ]; then
+if [ "$TARGET" = ios ]; then
+  LIB=libfluttorch_executorch.a
+  # A static archive rather than a dylib, because an iOS app cannot dlopen one
+  # from its bundle: the symbols have to be in the app binary, which is what the
+  # podspec's -force_load arranges.
+  SHARED=()
+  IOS_FLAGS=(-arch arm64 -isysroot "$(xcrun --sdk iphoneos --show-sdk-path)" -miphoneos-version-min=17.0)
+elif [ "$TARGET" = android ]; then
   LIB=libfluttorch_executorch.so
   # --no-undefined because a shared object on Android links happily with symbols
   # it cannot resolve and fails at dlopen instead, on the device, in front of a
@@ -116,6 +143,8 @@ fi
 # fluttorch_executorch_flutter is for.
 if [ "$TARGET" = android ]; then
   DEST="$HERE/../fluttorch_executorch_flutter/android/src/main/jniLibs/arm64-v8a"
+elif [ "$TARGET" = ios ]; then
+  DEST="$HERE/../fluttorch_executorch_flutter/ios/Libraries"
 else
   DEST="$HERE/.dart_tool/native"
 fi
@@ -125,9 +154,10 @@ mkdir -p "$DEST"
 # the cache. A build configured without devtools produces a libcoremldelegate.a
 # that links only against sources it does not contain, so the question worth
 # asking is not whether the file is there but whether it carries its SDK half.
-COREML="$OUT/backends/apple/coreml"
+COREML_A="$(archive libcoremldelegate.a backends/apple/coreml/libcoremldelegate.a)"
+COREML="$(dirname "${COREML_A:-$OUT/backends/apple/coreml/x}")"
 DEFINES=(-DC10_USING_CUSTOM_GENERATED_MACROS)
-force_load "$OUT/backends/xnnpack/libxnnpack_backend.a"
+force_load "$(archive libxnnpack_backend.a backends/xnnpack/libxnnpack_backend.a)"
 BACKENDS=("${FORCE[@]}")
 
 # Activation taps need the tracer hooks compiled into ExecuTorch itself, which
@@ -138,8 +168,8 @@ BACKENDS=("${FORCE[@]}")
 # Asked of the flags the runtime was compiled with rather than of its symbols,
 # because what the flag controls is a call inside an existing function: the
 # tracer hooks are header inlines and no symbol appears or disappears with them.
-ETCORE_FLAGS="$OUT/CMakeFiles/executorch_core.dir/flags.make"
-if [ -f "$ETCORE_FLAGS" ] &&
+ETCORE_FLAGS="$(find "$OUT" -name flags.make -path '*executorch_core.dir*' 2>/dev/null | head -1)"
+if [ -n "$ETCORE_FLAGS" ] && [ -f "$ETCORE_FLAGS" ] &&
    grep ET_EVENT_TRACER_ENABLED "$ETCORE_FLAGS" >/dev/null; then
   DEFINES+=(-DFLUTTORCH_WITH_TAPS -DET_EVENT_TRACER_ENABLED)
   echo "linking activation taps"
@@ -150,11 +180,11 @@ fi
 # grep reads to the end rather than stopping at the first hit: under pipefail a
 # `grep -q` that exits early leaves nm killed by SIGPIPE, and the test reports no
 # Core ML on a checkout that has it.
-if [ "$(uname -s)" = "Darwin" ] && [ -f "$COREML/libcoremldelegate.a" ] &&
-   nm -g --defined-only "$COREML/libcoremldelegate.a" 2>/dev/null |
+if [ "$(uname -s)" = "Darwin" ] && [ -n "$COREML_A" ] && [ -f "$COREML_A" ] &&
+   nm -g --defined-only "$COREML_A" 2>/dev/null |
      grep ETCoreMLModelAnalyzer >/dev/null; then
   DEFINES+=(-DFLUTTORCH_WITH_COREML)
-  force_load "$COREML/libcoremldelegate.a"
+  force_load "$COREML_A"
   BACKENDS+=(
     "${FORCE[@]}"
     "$COREML/libcoreml_util.a"
@@ -175,12 +205,14 @@ fi
 # The frameworks each needs are its own. MPS and Metal draw on Apple's, and both
 # are absent everywhere else, which the Darwin test above already governs.
 link_backend() {
-  local name="$1" archive="$2" define="$3"
+  local name="$1" file="$2" define="$3"
   shift 3
-  if [ ! -f "$archive" ]; then
+  file="$(archive "$(basename "$file")" "$file")"
+  if [ -z "$file" ] || [ ! -f "$file" ]; then
     echo "no $name under $OUT"
     return
   fi
+  local archive="$file"
   DEFINES+=("$define")
   force_load "$archive"
   BACKENDS+=("${FORCE[@]}")
@@ -189,25 +221,26 @@ link_backend() {
 }
 
 if [ "$(uname -s)" = "Darwin" ]; then
-  link_backend MPS "$OUT/backends/apple/mps/libmpsdelegate.a" \
+  link_backend MPS "backends/apple/mps/libmpsdelegate.a" \
     -DFLUTTORCH_WITH_MPS -framework MetalPerformanceShaders -framework MetalPerformanceShadersGraph -framework Metal
-  link_backend Metal "$OUT/backends/apple/metal/libmetal_backend.a" \
+  link_backend Metal "backends/apple/metal/libmetal_backend.a" \
     -DFLUTTORCH_WITH_METAL -framework Metal
 fi
-link_backend Vulkan "$OUT/backends/vulkan/libvulkan_backend.a" -DFLUTTORCH_WITH_VULKAN
-link_backend MLX "$OUT/backends/mlx/libmlx_backend.a" -DFLUTTORCH_WITH_MLX
-link_backend QNN "$OUT/backends/qualcomm/libqnn_executorch_backend.a" -DFLUTTORCH_WITH_QNN
+link_backend Vulkan "backends/vulkan/libvulkan_backend.a" -DFLUTTORCH_WITH_VULKAN
+link_backend MLX "backends/mlx/libmlx_backend.a" -DFLUTTORCH_WITH_MLX
+link_backend QNN "backends/qualcomm/libqnn_executorch_backend.a" -DFLUTTORCH_WITH_QNN
 
 # The parent of the checkout, because ExecuTorch's own headers include each other
 # as executorch/... and the checkout directory is that "executorch".
 "$CXX_BIN" -std=c++17 -O2 -fPIC -c "$HERE/src/fluttorch_executorch.cpp" -o "$DEST/shim.o" \
+  ${IOS_FLAGS[@]+"${IOS_FLAGS[@]}"} \
   -I "$HERE/src" -I "$(dirname "$ET")" -I "$ET/runtime/core/portable_type/c10" \
   "${DEFINES[@]}"
 
 # A backend registers itself from a static initialiser, which a linker drops from
 # a static library nobody references by symbol. force_load is what keeps it, and
 # without it the library loads and reports no backend at all.
-force_load "$OUT/kernels/portable/libportable_ops_lib.a"
+force_load "$(archive libportable_ops_lib.a kernels/portable/libportable_ops_lib.a)"
 OPS=("${FORCE[@]}")
 
 # flatcc is built by an ExternalProject that does not cross-compile, so the
@@ -217,23 +250,46 @@ OPS=("${FORCE[@]}")
 FLATCC=()
 [ "$TARGET" = host ] && FLATCC=("$OUT/third-party/flatcc_ep/lib/libflatccrt.a")
 
-"$CXX_BIN" -std=c++17 "${SHARED[@]}" -o "$DEST/$LIB" "$DEST/shim.o" \
-  "${BACKENDS[@]}" \
-  "${OPS[@]}" \
-  "$OUT/libexecutorch.a" "$OUT/libexecutorch_core.a" \
-  "$OUT/extension/module/libextension_module_static.a" \
-  "$OUT/extension/data_loader/libextension_data_loader.a" \
-  "$OUT/extension/tensor/libextension_tensor.a" \
-  "$OUT/extension/flat_tensor/libextension_flat_tensor.a" \
-  "$OUT/extension/named_data_map/libextension_named_data_map.a" \
-  "$OUT/extension/threadpool/libextension_threadpool.a" \
-  "$OUT/kernels/portable/libportable_kernels.a" \
-  "$OUT/kernels/portable/cpu/util/libkernels_util_all_deps.a" \
-  "$OUT/backends/xnnpack/third-party/XNNPACK/libXNNPACK.a" \
-  "$OUT/backends/xnnpack/third-party/XNNPACK/libxnnpack-microkernels-prod.a" \
-  "$OUT/backends/xnnpack/third-party/cpuinfo/libcpuinfo.a" \
-  "$OUT/backends/xnnpack/third-party/pthreadpool/libpthreadpool.a" \
-  "$OUT/kleidiai/libkleidiai.a" ${FLATCC[@]+"${FLATCC[@]}"}
+# The runtime, once, for every target. Written as name and Makefile-relative
+# path so the Xcode layout can be resolved by name and the two cannot drift into
+# describing different sets of archives.
+RUNTIME=()
+add() {
+  local found; found="$(archive "$1" "$2")"
+  [ -n "$found" ] && [ -f "$found" ] && RUNTIME+=("$found")
+}
+add libexecutorch.a                  libexecutorch.a
+add libexecutorch_core.a             libexecutorch_core.a
+# Named differently by the two builds: the Makefile one disambiguates a shared
+# sibling it also produces, and the Xcode one has no sibling to disambiguate.
+add libextension_module_static.a     extension/module/libextension_module_static.a
+add libextension_module.a            extension/module/libextension_module_static.a
+add libextension_data_loader.a       extension/data_loader/libextension_data_loader.a
+add libextension_tensor.a            extension/tensor/libextension_tensor.a
+add libextension_flat_tensor.a       extension/flat_tensor/libextension_flat_tensor.a
+add libextension_named_data_map.a    extension/named_data_map/libextension_named_data_map.a
+add libextension_threadpool.a        extension/threadpool/libextension_threadpool.a
+add libportable_kernels.a            kernels/portable/libportable_kernels.a
+add libkernels_util_all_deps.a       kernels/portable/cpu/util/libkernels_util_all_deps.a
+add libXNNPACK.a                     backends/xnnpack/third-party/XNNPACK/libXNNPACK.a
+add libxnnpack-microkernels-prod.a   backends/xnnpack/third-party/XNNPACK/libxnnpack-microkernels-prod.a
+add libcpuinfo.a                     backends/xnnpack/third-party/cpuinfo/libcpuinfo.a
+add libpthreadpool.a                 backends/xnnpack/third-party/pthreadpool/libpthreadpool.a
+add libkleidiai.a                    kleidiai/libkleidiai.a
+
+if [ "$TARGET" = ios ]; then
+  # One archive rather than a link. Nothing is resolved here: the app links it,
+  # which is why the podspec carries -force_load and why an unresolved symbol
+  # would surface there rather than now.
+  libtool -static -o "$DEST/$LIB" "$DEST/shim.o" \
+    "${BACKENDS[@]}" "${OPS[@]}" "${RUNTIME[@]}" 2>&1 |
+    grep -v 'has no symbols' || true
+else
+  "$CXX_BIN" -std=c++17 "${SHARED[@]}" -o "$DEST/$LIB" "$DEST/shim.o" \
+    "${BACKENDS[@]}" \
+    "${OPS[@]}" \
+    "${RUNTIME[@]}" ${FLATCC[@]+"${FLATCC[@]}"}
+fi
 
 rm -f "$DEST/shim.o"
 echo "built $DEST/$LIB ($TARGET)"
