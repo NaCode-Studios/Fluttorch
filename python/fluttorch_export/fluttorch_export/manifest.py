@@ -213,6 +213,18 @@ class ModelManifest:
     this field compares final outputs and says it could not look deeper, which is
     what it did before the field existed.
     """
+    activation_handles: tuple[int, ...] = ()
+    """Where each tap lives in the lowered graph, positional with ``activations``.
+
+    A device reads intermediates by debug handle, because that is the only name
+    the artifact carries: submodule names do not survive lowering. Resolving one
+    to the other is the export's job, since only the export sees both.
+
+    Empty when the export could not observe the layers it was asked about, which
+    is what a fully delegated graph is. Also additive: a reader without it can
+    still compare the activations it was given against the goldens, and simply
+    has no way to ask the device for its own.
+    """
     schema_version: int = SCHEMA_VERSION
 
     def __post_init__(self) -> None:
@@ -261,6 +273,14 @@ class ModelManifest:
                 f"{self.name!r} declares {len(self.activations)} activation(s) that no "
                 "golden case records; a tap nothing was captured for cannot be compared"
             )
+        # Positional, so a partial list would silently address the wrong layer:
+        # handle[1] answering for activations[2] reads as a clean comparison of
+        # two unrelated tensors.
+        if self.activation_handles and len(self.activation_handles) != len(self.activations):
+            raise ManifestError(
+                f"{self.name!r} carries {len(self.activation_handles)} activation handle(s) "
+                f"for {len(self.activations)} activation(s); they are positional"
+            )
 
     def to_dict(self) -> dict[str, Any]:
         """The manifest as the JSON document a Dart reader consumes.
@@ -282,6 +302,8 @@ class ModelManifest:
             d["preprocessing"] = [s.to_dict() for s in self.preprocessing]
         if self.activations:
             d["activations"] = [s.to_dict() for s in self.activations]
+        if self.activation_handles:
+            d["activation_handles"] = list(self.activation_handles)
         if self.labels is not None:
             d["labels"] = list(self.labels)
         if self.goldens:

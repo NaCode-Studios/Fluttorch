@@ -109,14 +109,22 @@ ft_status_t ft_run(ft_model_t* model, const ft_tensor_t* inputs,
                    int32_t input_count, ft_tensor_t* outputs,
                    int32_t output_count);
 
-// Runs inference and captures the named intermediates.
+// Runs inference and captures the selected intermediates.
 //
-// `layer_names` selects the taps; a name the graph does not carry is left
-// absent rather than zero-filled, and `out_captured` says which were filled, so
-// the caller can tell a layer that agreed from a layer nobody looked at.
+// `layer_handles` selects the taps by the debug handle the export recorded for
+// each one, because that is the only name an artifact carries: submodule names
+// do not survive lowering, and resolving one to the other needs the manifest,
+// which is a layer above this. A handle the graph does not run is left absent
+// rather than zero-filled, and `out_captured` says which were filled, so the
+// caller can tell a layer that agreed from a layer nobody looked at.
+//
+// A delegated partition executes as one instruction and reports nothing from
+// inside itself, so on a fully delegated artifact every tap comes back absent.
+// That is the honest answer, and it is why an export that wants attribution is
+// lowered without a partitioner.
 ft_status_t ft_run_with_taps(ft_model_t* model, const ft_tensor_t* inputs,
                              int32_t input_count, ft_tensor_t* outputs,
-                             int32_t output_count, const char** layer_names,
+                             int32_t output_count, const int64_t* layer_handles,
                              int32_t layer_count, ft_tensor_t* out_activations,
                              int32_t* out_captured);
 

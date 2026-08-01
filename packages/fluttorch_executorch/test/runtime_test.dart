@@ -92,22 +92,24 @@ final class FakeModel implements NativeModel {
   }
 
   @override
-  Map<String, Tensor> runWithTaps(
+  Set<int> runWithTaps(
     List<Tensor> inputs,
     List<Tensor> outputs,
-    List<String> layers,
+    List<Tensor> activations,
+    List<int> handles,
   ) {
     run(inputs, outputs);
     if (!_taps) return const {};
-    return {
-      // The second layer is deliberately absent: a graph that does not carry a
-      // requested tap leaves it out rather than zero-filling it.
-      for (final name in layers.take(1))
-        name: Tensor.zeros(
-          TensorSpec(name: name, dtype: DType.float32, shape: const [2]),
-        ),
-    };
+    tappedHandles = handles;
+    // Everything but the last is filled. A graph that does not run a requested
+    // tap leaves its buffer as the caller supplied it rather than zero-filling
+    // it, which would read as a layer that agreed.
+    return {for (var i = 0; i < handles.length - 1; i++) i};
   }
+
+  /// The handles the runtime resolved, so a test can prove it read them from the
+  /// manifest rather than passing positions or names.
+  List<int>? tappedHandles;
 
   @override
   void dispose() => disposed = true;
@@ -131,6 +133,9 @@ ModelManifest _manifest({
     TensorSpec(name: 'encoder.0', dtype: DType.float32, shape: [2]),
     TensorSpec(name: 'encoder.1', dtype: DType.float32, shape: [2]),
   ],
+  // Where the export found each tap in the lowered graph. The second is
+  // negative, which the stub reads as a layer the graph does not run.
+  activationHandles: const [7, -1],
   goldens: const [
     GoldenCase(
       id: 'case-0',

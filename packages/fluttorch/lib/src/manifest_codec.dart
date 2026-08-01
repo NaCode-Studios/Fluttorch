@@ -57,6 +57,9 @@ abstract final class ManifestCodec {
       activations: json.containsKey('activations')
           ? _specs(json, 'activations')
           : const [],
+      activationHandles: json.containsKey('activation_handles')
+          ? _intList(json, 'activation_handles')
+          : const [],
     );
   }
 
@@ -83,6 +86,8 @@ abstract final class ManifestCodec {
       'preprocessing': m.preprocessing.map(_stepToJson).toList(),
     if (m.activations.isNotEmpty)
       'activations': m.activations.map(_specToJson).toList(),
+    if (m.activationHandles.isNotEmpty)
+      'activation_handles': m.activationHandles,
     if (m.labels != null) 'labels': m.labels,
     if (m.goldens.isNotEmpty) 'goldens': m.goldens.map(_goldenToJson).toList(),
   };
@@ -361,4 +366,20 @@ abstract final class ManifestCodec {
     Map<String, Object?> m,
     String key,
   ) => m.containsKey(key) ? _stringList(m, key) : null;
+
+  static List<int> _intList(
+    Map<String, Object?> m,
+    String key, {
+    String? path,
+  }) {
+    final field = _at(path, key);
+    final list = _list(m, key, path: path);
+    return List.unmodifiable([
+      for (var i = 0; i < list.length; i++)
+        if (list[i] case final int n)
+          n
+        else
+          _wrong('$field[$i]', 'an integer', list[i]),
+    ]);
+  }
 }

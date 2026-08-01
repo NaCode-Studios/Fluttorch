@@ -97,7 +97,7 @@ typedef _RunWithTapsNative =
       Int32,
       Pointer<FtTensor>,
       Int32,
-      Pointer<Pointer<Utf8>>,
+      Pointer<Int64>,
       Int32,
       Pointer<FtTensor>,
       Pointer<Int32>,
@@ -109,7 +109,7 @@ typedef _RunWithTaps =
       int,
       Pointer<FtTensor>,
       int,
-      Pointer<Pointer<Utf8>>,
+      Pointer<Int64>,
       int,
       Pointer<FtTensor>,
       Pointer<Int32>,
@@ -302,20 +302,21 @@ final class _NativeModel implements NativeModel {
   });
 
   @override
-  Map<String, Tensor> runWithTaps(
+  Set<int> runWithTaps(
     List<Tensor> inputs,
     List<Tensor> outputs,
-    List<String> layers,
+    List<Tensor> activations,
+    List<int> handles,
   ) => using((arena) {
     final ins = _marshal(inputs, arena);
     final outs = _marshal(outputs, arena);
+    final acts = _marshal(activations, arena);
 
-    final names = arena<Pointer<Utf8>>(layers.length);
-    for (var i = 0; i < layers.length; i++) {
-      names[i] = layers[i].toNativeUtf8(allocator: arena);
+    final wanted = arena<Int64>(handles.length);
+    for (var i = 0; i < handles.length; i++) {
+      wanted[i] = handles[i];
     }
     final captured = arena<Int32>();
-    final acts = arena<FtTensor>(layers.length);
 
     _bindings._check(
       _bindings._runWithTaps(
@@ -324,8 +325,8 @@ final class _NativeModel implements NativeModel {
         inputs.length,
         outs,
         outputs.length,
-        names,
-        layers.length,
+        wanted,
+        handles.length,
         acts,
         captured,
       ),
@@ -333,24 +334,15 @@ final class _NativeModel implements NativeModel {
     );
     _writeBack(outputs, outs);
 
-    // Only the first `captured` entries were filled. A tap the graph does not
-    // carry is left out of the result rather than zero-filled, because the gate
-    // reads a zero as a layer that agreed.
-    final result = <String, Tensor>{};
-    for (var i = 0; i < captured.value; i++) {
-      final t = acts[i];
-      final spec = TensorSpec(
-        name: layers[i],
-        dtype: DType.values[t.dtype],
-        shape: [for (var d = 0; d < t.rank; d++) t.shape[d]],
-      );
-      result[layers[i]] = Tensor.view(
-        spec: spec,
-        bytes: Uint8List.fromList(t.data.asTypedList(t.byteLength)),
-        shape: spec.shape,
-      );
+    // A bitmask rather than a count, because what comes back can be sparse: a
+    // partially delegated graph answers for the layers it runs itself and for
+    // none of the ones inside a partition, and a count could not say which.
+    final filled = <int>{};
+    for (var i = 0; i < handles.length; i++) {
+      if (captured.value & (1 << i) != 0) filled.add(i);
     }
-    return result;
+    _writeBack(activations, acts, only: filled);
+    return filled;
   });
 
   @override
@@ -386,8 +378,18 @@ final class _NativeModel implements NativeModel {
   }
 
   /// Copies what the native side wrote back into the caller's buffers.
-  void _writeBack(List<Tensor> outputs, Pointer<FtTensor> written) {
+  /// Copies the native side's writes back into the caller's tensors.
+  ///
+  /// [only] restricts that to the positions actually filled, which taps need:
+  /// a tap the graph did not run leaves its buffer as the caller supplied it,
+  /// and copying over it would turn "nobody looked" into a number.
+  void _writeBack(
+    List<Tensor> outputs,
+    Pointer<FtTensor> written, {
+    Set<int>? only,
+  }) {
     for (var i = 0; i < outputs.length; i++) {
+      if (only != null && !only.contains(i)) continue;
       outputs[i].bytes.setAll(
         0,
         written[i].data.asTypedList(written[i].byteLength),

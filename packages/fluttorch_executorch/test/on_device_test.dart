@@ -27,6 +27,7 @@ final _library = File(
 );
 final _quantized = Directory('../../testdata/quantized');
 final _coreml = Directory('../../testdata/coreml');
+final _taps = Directory('../../testdata/taps');
 
 void main() {
   if (!_library.existsSync() || !_quantized.existsSync()) {
@@ -93,21 +94,23 @@ void main() {
       );
     });
 
-    test(
-      'taps are reported absent rather than answered with nothing',
-      () async {
-        expect(model.capabilities.supportsActivationTaps, isFalse);
-        await expectLater(
-          model.runWithTaps([
-            await goldens.tensor(
-              goldens.cases.first.inputKeys.single,
-              goldens.manifest.inputs.single,
-            ),
-          ]),
-          throwsA(isA<CapabilityUnavailableException>()),
-        );
-      },
-    );
+    test('the build can read intermediates, this artifact has none', () async {
+      // Two different questions, and conflating them is what would make a gate
+      // report agreement it never measured. The build compiles the tracer, so
+      // it can read any op the runtime executes itself. This artifact is one
+      // delegated partition, so it executes none, and the export declared no
+      // taps for exactly that reason.
+      expect(model.capabilities.supportsActivationTaps, isTrue);
+      expect(model.manifest.activations, isEmpty);
+
+      final run = await model.runWithTaps([
+        await goldens.tensor(
+          goldens.cases.first.inputKeys.single,
+          goldens.manifest.inputs.single,
+        ),
+      ]);
+      expect(run.activations, isEmpty);
+    });
   });
 
   // Which delegates this build has is a property of the ExecuTorch checkout it
@@ -170,20 +173,119 @@ void main() {
       );
     });
 
-    test(
-      'taps are reported absent rather than answered with nothing',
-      () async {
-        expect(model.capabilities.supportsActivationTaps, isFalse);
-        await expectLater(
-          model.runWithTaps([
-            await goldens.tensor(
-              goldens.cases.first.inputKeys.single,
-              goldens.manifest.inputs.single,
-            ),
-          ]),
-          throwsA(isA<CapabilityUnavailableException>()),
-        );
-      },
-    );
+    test('the build can read intermediates, this artifact has none', () async {
+      // Two different questions, and conflating them is what would make a gate
+      // report agreement it never measured. The build compiles the tracer, so
+      // it can read any op the runtime executes itself. This artifact is one
+      // delegated partition, so it executes none, and the export declared no
+      // taps for exactly that reason.
+      expect(model.capabilities.supportsActivationTaps, isTrue);
+      expect(model.manifest.activations, isEmpty);
+
+      final run = await model.runWithTaps([
+        await goldens.tensor(
+          goldens.cases.first.inputKeys.single,
+          goldens.manifest.inputs.single,
+        ),
+      ]);
+      expect(run.activations, isEmpty);
+    });
+  });
+
+  // Attribution needs a graph whose layers the runtime executes itself, which is
+  // what `backend='portable'` exports and what no delegated artifact can be.
+  if (!_taps.existsSync()) {
+    test('the attribution gate needs testdata/taps', () {}, skip: true);
+    return;
+  }
+
+  group('M20 · attributing a drift to the layer that caused it', () {
+    late DirectoryGoldenBundle goldens;
+    late LoadedModel model;
+
+    setUpAll(() async {
+      goldens = await DirectoryGoldenBundle.open(
+        '${_taps.path}/two_layer.fluttorch.json',
+      );
+      model = await ExecuTorchRuntime(bindings).load(
+        artifact: await File('${_taps.path}/two_layer.pte').readAsBytes(),
+        manifest: goldens.manifest,
+        backend: 'xnnpack',
+      );
+    });
+
+    tearDownAll(() async => model.dispose());
+
+    test('the export says where each tap lives in the lowered graph', () {
+      expect(
+        [for (final s in model.manifest.activations) s.name],
+        ['fc1', 'act', 'fc2'],
+      );
+      // Submodule names do not survive lowering, so without these the device has
+      // nothing to ask for.
+      expect(model.manifest.activationHandles, hasLength(3));
+    });
+
+    test('every declared layer comes back from the device', () async {
+      final run = await model.runWithTaps([
+        await goldens.tensor(
+          goldens.cases.first.inputKeys.single,
+          goldens.manifest.inputs.single,
+        ),
+      ]);
+
+      expect(run.activations.keys, containsAll(['fc1', 'act', 'fc2']));
+      expect(run.activations['fc1']!.shape, [1, 8]);
+      expect(run.activations['act']!.shape, [1, 8]);
+      expect(run.activations['fc2']!.shape, [1, 3]);
+    });
+
+    test('the intermediates are the layers, not three copies of one', () async {
+      final run = await model.runWithTaps([
+        await goldens.tensor(
+          goldens.cases.first.inputKeys.single,
+          goldens.manifest.inputs.single,
+        ),
+      ]);
+
+      final fc1 = run.activations['fc1']!.asFloat32List();
+      final act = run.activations['act']!.asFloat32List();
+      final fc2 = run.activations['fc2']!.asFloat32List();
+
+      // The activation is a ReLU of the layer before it, which is a property no
+      // amount of plumbing luck reproduces: every negative gone, every
+      // non-negative untouched.
+      for (var i = 0; i < fc1.length; i++) {
+        expect(act[i], fc1[i] < 0 ? 0.0 : fc1[i], reason: 'unit $i');
+      }
+      // And the last tap is the output, because fc2 is the last layer.
+      expect(fc2, orderedEquals(run.outputs.single.asFloat32List()));
+    });
+
+    test('each tap matches the reference the export captured', () async {
+      final run = await model.runWithTaps([
+        await goldens.tensor(
+          goldens.cases.first.inputKeys.single,
+          goldens.manifest.inputs.single,
+        ),
+      ]);
+
+      // The whole point of attribution: the device's layer against the source
+      // model's layer, tap by tap, so a drift names where it started.
+      final case0 = goldens.cases.first;
+      for (var i = 0; i < model.manifest.activations.length; i++) {
+        final spec = model.manifest.activations[i];
+        final reference = await goldens.tensor(case0.activationKeys[i], spec);
+        final onDevice = run.activations[spec.name]!.asFloat32List();
+        final expected = reference.asFloat32List();
+        for (var e = 0; e < expected.length; e++) {
+          expect(
+            onDevice[e],
+            closeTo(expected[e], 1e-5),
+            reason: '${spec.name}[$e]',
+          );
+        }
+      }
+    });
   });
 }
