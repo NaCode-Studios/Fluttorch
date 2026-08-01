@@ -145,6 +145,7 @@ def _lower(
 
         partitioner = XnnpackPartitioner()
     elif backend == "coreml":
+        import coremltools as ct
         from executorch.backends.apple.coreml.compiler import CoreMLBackend
         from executorch.backends.apple.coreml.partition import CoreMLPartitioner
 
@@ -152,7 +153,19 @@ def _lower(
         # decided here and not on the device. Recording the choice in the
         # manifest is what lets the parity matrix say which backend a number
         # came from rather than assuming.
-        partitioner = CoreMLPartitioner(compile_specs=CoreMLBackend.generate_compile_specs())
+        #
+        # Float32 is pinned rather than accepted. Core ML converts to float16 by
+        # default, and the manifest has no field that records it, so an artifact
+        # lowered on that default answers to a full-precision bound it cannot
+        # hold: on this two-layer model that reads as drift up to 9.7e-2 against
+        # references the source model produced. Until the manifest can describe
+        # the precision, the export stays at the one the manifest already claims
+        # by saying nothing.
+        partitioner = CoreMLPartitioner(
+            compile_specs=CoreMLBackend.generate_compile_specs(
+                compute_precision=ct.precision.FLOAT32,
+            )
+        )
     else:
         raise ExportError(
             f"backend {backend!r} is not available; this build lowers for "

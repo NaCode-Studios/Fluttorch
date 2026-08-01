@@ -31,14 +31,26 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
   goldens land inside the tolerance the recipe starts from, with a drift between
   `1.4e-3` and `3.0e-3`. Held to the full-precision bound instead, the same run fails
   every case, which is what makes the first result mean something.
-- The exporter lowers for Core ML as well as XNNPACK (M21), and an artifact says which
-  one it was lowered for. That half works: a Core ML `.pte` is produced and the manifest
-  records the backend. What is not linked is the Core ML runtime, and the reason is
-  upstream: after working around a submodule missing from `.gitmodules`, a setup script
-  that calls `python`, a vendored protobuf too old for CMake 4 and a googletest it does
-  not ship, `libcoremldelegate.a` still references three SDK classes it does not contain,
-  and the flag that should compile them adds no source to the target. The build script
-  records all five so the next person does not rediscover them one build at a time.
+- The exporter lowers for Core ML as well as XNNPACK (M21), an artifact says which one it
+  was lowered for, and the Core ML runtime now links and executes. A Core ML `.pte` from
+  our own exporter loads through this binding on an M-series Mac, and all four of its
+  goldens hold at the full-precision bound, in the same suite as the quantized XNNPACK
+  case. What blocked it was one absent directory. ExecuTorch's
+  `backends/apple/coreml/scripts/install_requirements.sh` runs under `set -e` and invokes
+  `python`, so where only `python3` is on PATH it exits at its pip step, short of the
+  commands that build coremltools' `mlmodel` target and copy the protobuf sources that
+  produces into `runtime/sdk/format/`. Without that directory the delegate's SDK sources
+  are dropped from the CMake target, and `libcoremldelegate.a` references
+  `ETCoreMLModelAnalyzer`, `ETCoreMLModelDebugInfo` and `ModelEventLoggerImpl` without
+  containing them. `tool/build_native.sh` links Core ML where the checkout can supply it,
+  says which of the two it did, and records the four upstream frictions so the next
+  person does not rediscover them one build at a time.
+- Core ML exports are pinned to float32 (M21). Core ML converts to float16 by default and
+  the manifest has no field that records a precision, so an artifact lowered on that
+  default answers to a full-precision bound it cannot hold: on the two-layer model that
+  is drift of up to `9.7e-2` against references the source model produced. Pinning keeps
+  the manifest true to the artifact it describes. Recording the precision instead, so a
+  float16 export can be gated at a bound that fits it, is on the board.
 - The two backends differ in what they can promise, and the binding says so per backend
   rather than per build. XNNPACK on a single-threaded pool fixes the order of every
   reduction; Core ML chooses between the Neural Engine and the GPU and promises no such

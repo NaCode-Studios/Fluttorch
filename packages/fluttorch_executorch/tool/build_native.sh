@@ -19,19 +19,27 @@
 #     -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON
 #   cmake --build cmake-out -j
 #
-# Core ML is not linked, and the reason is upstream rather than a decision here.
-# Building it in ExecuTorch 1.3.0 takes four steps the documentation does not
-# mention: the coremltools submodule is referenced by CMakeLists and absent from
+# Core ML is linked when the checkout carries it and skipped when it does not, so
+# a contributor who has only built XNNPACK still gets a library. Getting it means
+# adding -DEXECUTORCH_BUILD_COREML=ON -DEXECUTORCH_BUILD_DEVTOOLS=ON to the
+# configure above, and four steps upstream documents nowhere.
+#
+# The coremltools submodule is referenced by CMakeLists and absent from
 # .gitmodules, so it arrives only through
-# backends/apple/coreml/scripts/install_requirements.sh, which itself invokes
-# `python` and fails where only `python3` is on PATH; the protobuf it vendors
-# needs -DCMAKE_POLICY_VERSION_MINIMUM=3.5 under CMake 4 and
-# -Dprotobuf_BUILD_TESTS=OFF for a googletest it does not ship. After all four,
-# libcoremldelegate.a still references ETCoreMLModelAnalyzer,
-# ETCoreMLModelDebugInfo and ModelEventLoggerImpl without containing them:
-# EXECUTORCH_BUILD_DEVTOOLS=ON is in the cache and the generated build.make for
-# that target carries no SDK source at all. The archive cannot be linked into a
-# shared library until that is fixed or those sources are compiled by hand.
+# backends/apple/coreml/scripts/install_requirements.sh. That script runs under
+# `set -e` and invokes `python`, so where only `python3` is on PATH it dies at its
+# pip step, short of the three commands that matter: configure coremltools, build
+# its mlmodel target, copy the protobuf sources that produces into
+# backends/apple/coreml/runtime/sdk/format/. Activating the environment supplies
+# the `python` it wants. Its vendored protobuf then needs
+# -DCMAKE_POLICY_VERSION_MINIMUM=3.5 under CMake 4 and -Dprotobuf_BUILD_TESTS=OFF
+# for a googletest it does not ship.
+#
+# That format/ directory is the whole thing. Without it the delegate's SDK sources
+# are dropped from the target and libcoremldelegate.a references
+# ETCoreMLModelAnalyzer, ETCoreMLModelDebugInfo and ModelEventLoggerImpl without
+# containing them, which reads like the EXECUTORCH_BUILD_DEVTOOLS branch failing
+# to fire and is not: the branch runs, and hands it sources that are not there.
 set -euo pipefail
 
 ET="${1:-$HOME/.cache/fluttorch/executorch}"
@@ -51,17 +59,44 @@ esac
 
 mkdir -p "$HERE/.dart_tool/native"
 
+# Whether this checkout can supply Core ML, asked of the archive rather than of
+# the cache. A build configured without devtools produces a libcoremldelegate.a
+# that links only against sources it does not contain, so the question worth
+# asking is not whether the file is there but whether it carries its SDK half.
+COREML="$OUT/backends/apple/coreml"
+DEFINES=(-DC10_USING_CUSTOM_GENERATED_MACROS)
+BACKENDS=(-Wl,-force_load,"$OUT/backends/xnnpack/libxnnpack_backend.a")
+
+# grep reads to the end rather than stopping at the first hit: under pipefail a
+# `grep -q` that exits early leaves nm killed by SIGPIPE, and the test reports no
+# Core ML on a checkout that has it.
+if [ "$(uname -s)" = "Darwin" ] && [ -f "$COREML/libcoremldelegate.a" ] &&
+   nm -g --defined-only "$COREML/libcoremldelegate.a" 2>/dev/null |
+     grep ETCoreMLModelAnalyzer >/dev/null; then
+  DEFINES+=(-DFLUTTORCH_WITH_COREML)
+  BACKENDS+=(
+    -Wl,-force_load,"$COREML/libcoremldelegate.a"
+    "$COREML/libcoreml_util.a"
+    "$COREML/libcoreml_inmemoryfs.a"
+    "$COREML/third-party/coremltools/deps/protobuf/cmake/libprotobuf-lite.a"
+  )
+  SHARED+=(-framework CoreML -lsqlite3)
+  echo "linking Core ML"
+else
+  echo "no Core ML under $OUT; building XNNPACK alone"
+fi
+
 # The parent of the checkout, because ExecuTorch's own headers include each other
 # as executorch/... and the checkout directory is that "executorch".
 c++ -std=c++17 -O2 -c "$HERE/src/fluttorch_executorch.cpp" -o "$HERE/.dart_tool/native/shim.o" \
   -I "$HERE/src" -I "$(dirname "$ET")" -I "$ET/runtime/core/portable_type/c10" \
-  -DC10_USING_CUSTOM_GENERATED_MACROS
+  "${DEFINES[@]}"
 
 # A backend registers itself from a static initialiser, which a linker drops from
 # a static library nobody references by symbol. force_load is what keeps it, and
 # without it the library loads and reports no backend at all.
 c++ -std=c++17 "${SHARED[@]}" -o "$HERE/.dart_tool/native/$LIB" "$HERE/.dart_tool/native/shim.o" \
-  -Wl,-force_load,"$OUT/backends/xnnpack/libxnnpack_backend.a" \
+  "${BACKENDS[@]}" \
   -Wl,-force_load,"$OUT/kernels/portable/libportable_ops_lib.a" \
   "$OUT/libexecutorch.a" "$OUT/libexecutorch_core.a" \
   "$OUT/extension/module/libextension_module_static.a" \
