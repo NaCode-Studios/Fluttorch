@@ -13,4 +13,5 @@
 library;
 
 export 'src/bindings.dart';
+export 'src/isolate_runtime.dart';
 export 'src/runtime.dart';
