@@ -9,6 +9,8 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-01
+
 ### Added
 
 - The seam between Fluttorch and ExecuTorch is declared as a C ABI in
@@ -132,6 +134,16 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
   somebody eventually routes around. `docs/backend-coverage.md` records which half of each
   backend's claim is verified where, and which are not run at all.
 
+### Changed
+
+- The quantized lowering imports `convert_pt2e` from `torchao` rather than from
+  `torch.ao`, where the pt2e flow no longer lives. Written against the old path, it
+  had never been executed: neither the development machine nor CI carried torch, so
+  M17 shipped in `0.4.0` with its exit criterion claimed rather than earned.
+- `FluttorchRuntime.load` takes `deterministic`. It belongs on the seam rather than
+  on one backend, since it is the difference between a tolerance that measures a
+  model and one that measures run-to-run noise.
+
 ### Fixed
 
 - The goldens under `testdata/quantized/` were not the ones the sample model produces.
@@ -160,17 +172,6 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
   that was never made. The argument is on the board so the milestone is not
   re-argued.
 
-### Changed
-
-- The quantized lowering imports `convert_pt2e` from `torchao` rather than from
-  `torch.ao`, where the pt2e flow no longer lives. Written against the old path, it
-  had never been executed: neither the development machine nor CI carried torch, so
-  M17 shipped in `0.4.0` with its exit criterion claimed rather than earned.
-- `FluttorchRuntime.load` takes `deterministic`. It belongs on the seam rather than
-  on one backend, since it is the difference between a tolerance that measures a
-  model and one that measures run-to-run noise.
-
-### Fixed
 
 - `int8-dynamic` and `int4-weight-only` export, which is now asserted by running
   them rather than by describing them. `int8-static` does not: `torchao` introspects
@@ -482,7 +483,8 @@ user can invoke yet, which is what `0.0.1` says that a minor would overstate.
   needs neither `torch` nor `executorch`.
 - 109 tests: 90 Dart across three packages, 19 Python.
 
-[Unreleased]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.1.0...v0.2.0
