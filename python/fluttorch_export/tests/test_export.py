@@ -23,6 +23,7 @@ from fluttorch_export.export import (  # noqa: E402
     resolve,
 )
 from fluttorch_export.manifest import ManifestError  # noqa: E402
+from fluttorch_export.quantization import QuantizationError  # noqa: E402
 
 from . import sample_model  # noqa: E402
 
@@ -206,3 +207,113 @@ class TestRefusals:
                 out_dir=tmp_path,
                 name="cplx",
             )
+
+
+class TestQuantization:
+    """M17 · the recipes, run rather than described.
+
+    Skipped where torch is absent, which includes CI. What these assert is that a
+    recipe produces an artifact and that the manifest says which one, not that the
+    numbers survived it: that is the parity gate's job, on the device.
+    """
+
+    @pytest.mark.parametrize("recipe", ["int8-dynamic", "int4-weight-only"])
+    def test_a_recipe_exports_and_is_recorded(self, tmp_path, recipe: str) -> None:
+        result = export_model(
+            model=sample_model.build(),
+            example_inputs=sample_model.example_inputs(),
+            out_dir=tmp_path / recipe,
+            name="two_layer",
+            golden_inputs=sample_model.golden_cases(),
+            quantization=recipe,
+        )
+
+        assert result.manifest.quantization == recipe
+        assert result.artifact.stat().st_size > 0
+        # The name is read back on the device to pick a tolerance, so an artifact
+        # whose manifest forgot it is one the gate cannot judge.
+        assert f'"quantization": "{recipe}"' in result.manifest_path.read_text()
+
+    def test_int8_static_names_the_toolchain_that_cannot_convert_it(self, tmp_path) -> None:
+        # torchao introspects an operator overload that torch 2.13 does not
+        # expose, before the model is involved. Asserting the translated message
+        # rather than skipping keeps the failure visible: the day the toolchain
+        # is fixed, this test fails and the entry describing it is removed.
+        with pytest.raises(ExportError, match="cannot be converted by the installed"):
+            export_model(
+                model=sample_model.build(),
+                example_inputs=sample_model.example_inputs(),
+                out_dir=tmp_path / "static",
+                name="two_layer",
+                golden_inputs=sample_model.golden_cases(),
+                quantization="int8-static",
+            )
+
+    def test_a_static_recipe_refuses_a_single_case(self, tmp_path) -> None:
+        with pytest.raises(QuantizationError, match="represent the job"):
+            export_model(
+                model=sample_model.build(),
+                example_inputs=sample_model.example_inputs(),
+                out_dir=tmp_path / "one",
+                name="two_layer",
+                quantization="int8-static",
+            )
+
+    def test_an_unknown_recipe_is_refused_before_anything_runs(self, tmp_path) -> None:
+        with pytest.raises(QuantizationError, match="int8-static"):
+            export_model(
+                model=sample_model.build(),
+                example_inputs=sample_model.example_inputs(),
+                out_dir=tmp_path / "nope",
+                name="two_layer",
+                quantization="int3-experimental",
+            )
+
+
+class TestTaps:
+    """M18 · the reference activations a gate needs to attribute a drift."""
+
+    def test_taps_are_declared_and_captured_per_case(self, tmp_path) -> None:
+        result = export_model(
+            model=sample_model.build(),
+            example_inputs=sample_model.example_inputs(),
+            out_dir=tmp_path / "taps",
+            name="two_layer",
+            golden_inputs=sample_model.golden_cases(),
+            taps=["fc1", "act", "fc2"],
+        )
+
+        manifest = result.manifest
+        # Declared in the order the graph runs them, which is what makes
+        # "the earliest layer that diverged" mean anything on the device.
+        assert [s.name for s in manifest.activations] == ["fc1", "act", "fc2"]
+        # Shapes are observed by running the model, not read off the graph.
+        assert [s.shape for s in manifest.activations] == [(1, 8), (1, 8), (1, 3)]
+
+        for case in manifest.goldens:
+            assert len(case.activation_keys) == 3
+            for spec, key in zip(manifest.activations, case.activation_keys, strict=True):
+                written = result.golden_dir / key
+                assert written.exists()
+                assert written.stat().st_size == spec.byte_length_for(spec.shape)
+
+    def test_an_unknown_submodule_lists_the_ones_there_are(self, tmp_path) -> None:
+        with pytest.raises(ExportError, match="fc1"):
+            export_model(
+                model=sample_model.build(),
+                example_inputs=sample_model.example_inputs(),
+                out_dir=tmp_path / "nope",
+                name="two_layer",
+                taps=["encoder.0"],
+            )
+
+    def test_without_taps_nothing_is_declared(self, tmp_path) -> None:
+        result = export_model(
+            model=sample_model.build(),
+            example_inputs=sample_model.example_inputs(),
+            out_dir=tmp_path / "none",
+            name="two_layer",
+        )
+
+        assert result.manifest.activations == ()
+        assert all(not c.activation_keys for c in result.manifest.goldens)

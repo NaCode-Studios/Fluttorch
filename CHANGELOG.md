@@ -41,12 +41,26 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
 
 ### Changed
 
+- The quantized lowering imports `convert_pt2e` from `torchao` rather than from
+  `torch.ao`, where the pt2e flow no longer lives. Written against the old path, it
+  had never been executed: neither the development machine nor CI carried torch, so
+  M17 shipped in `0.4.0` with its exit criterion claimed rather than earned.
 - `FluttorchRuntime.load` takes `deterministic`. It belongs on the seam rather than
   on one backend, since it is the difference between a tolerance that measures a
   model and one that measures run-to-run noise.
 
 ### Fixed
 
+- `int8-dynamic` and `int4-weight-only` export, which is now asserted by running
+  them rather than by describing them. `int8-static` does not: `torchao` introspects
+  an operator overload that torch 2.13 does not expose, before the model is
+  involved, and the failure surfaced as the name of a pass nobody has heard of. The
+  exporter now says which toolchain combination is at fault and which recipes work
+  on it, and a test pins that message so the day it is fixed upstream, the test
+  fails and this entry goes.
+- Tap capture is asserted against a real export: the activations are declared in
+  graph order with shapes observed by running the model, every case records a key
+  for each, and the files written are the length the spec declares.
 - The linked artifact records are no longer skipped when the attestation fails, and
   they name the repository when the endpoint cannot work it out. It resolves which
   repository built an artifact from the artifact's attestation, so an archive without

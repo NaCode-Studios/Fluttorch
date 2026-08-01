@@ -35,8 +35,14 @@ needs one of them asks, and degrades when the answer is no.
 
 ```bash
 dart pub get                                   # resolves the workspace
-pip install -e python/fluttorch_export[dev]
+python3.11 -m venv .venv && source .venv/bin/activate
+pip install torch executorch pytest
 ```
+
+Activate the environment rather than calling `.venv/bin/python` directly. The
+export shells out to `flatc` to serialise an artifact, and that binary is
+installed into the environment's `bin`: without it on `PATH` every export test
+fails on a missing file rather than on anything to do with the model.
 
 ```bash
 dart analyze && dart test
