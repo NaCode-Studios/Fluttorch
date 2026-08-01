@@ -19,6 +19,12 @@
 // Every call returns an ft_status_t and never throws: an exception crossing the
 // FFI boundary terminates the process, and a model that fails to load is an
 // ordinary Tuesday.
+//
+// Strings passed in are borrowed for the duration of the call and nothing else.
+// An implementation that keeps one past the call must copy it or point at its
+// own storage: the caller's arena goes when the call returns, and reading it
+// afterwards yields plausible text rather than a crash, which is the worst of
+// both. Strings handed back must outlive the call for the same reason.
 
 #ifndef FLUTTORCH_EXECUTORCH_H_
 #define FLUTTORCH_EXECUTORCH_H_

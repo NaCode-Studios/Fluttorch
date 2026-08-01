@@ -24,6 +24,21 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
   carry stays absent instead of arriving zero-filled, because a zero reads as
   agreement.
 
+- `NativeExecuTorchBindings` binds that ABI over `dart:ffi`, and is tested against a
+  C library the suite compiles and calls. A Dart fake cannot check struct field
+  offsets, arrays of strings or pointer arithmetic over tensor arrays, because a
+  wrong offset there returns plausible nonsense instead of failing to compile. It
+  earned its keep immediately: the first run found a pointer kept past the call
+  that owned it, which read freed memory and returned a backend name that looked
+  like text.
+
+- M22, migrating off the interim dependency, is closed as not planned rather than
+  built. `fluttorch_executorch` was never published and its runtime always threw, and
+  `executorch_flutter` was only ever used directly by the M2 spike, which is an
+  example rather than an API anyone depends on. A deprecation window guards a promise
+  that was never made. The argument is on the board so the milestone is not
+  re-argued.
+
 ### Changed
 
 - `FluttorchRuntime.load` takes `deterministic`. It belongs on the seam rather than
