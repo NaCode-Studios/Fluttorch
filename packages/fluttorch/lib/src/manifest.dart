@@ -74,10 +74,10 @@ final class ModelManifest {
   /// can name the output that was wrong but not the layer that made it wrong.
   /// The engine that executes this artifact, when it is not ExecuTorch.
   ///
-  /// An artifact is a `.pte` or a `.onnx` and the two are not interchangeable,
-  /// so a reader that loads one as the other gets a parse error at best.
-  /// Nothing in the bytes says which, and the weight hash cannot tell them
-  /// apart because it is computed over whichever one was written.
+  /// An artifact is a `.pte`, a `.onnx` or a `.tflite` and none of them is
+  /// interchangeable, so a reader that loads one as another gets a parse error
+  /// at best. Nothing in the bytes says which, and the weight hash cannot tell
+  /// them apart because it is computed over whichever one was written.
   ///
   /// Distinct from the backend, which names a delegate or provider inside a
   /// runtime. XNNPACK is an ExecuTorch delegate and CoreMLExecutionProvider is

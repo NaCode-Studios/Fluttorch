@@ -172,6 +172,37 @@ def _lower_onnx(
     return out_path.read_bytes()
 
 
+def _lower_litert(
+    model: torch.nn.Module,
+    example: tuple[torch.Tensor, ...],
+    out_path: pathlib.Path,
+) -> bytes:
+    """Convert through litert_torch and hand back the bytes.
+
+    ``ai_edge_torch`` is a shim now: the converter moved to ``litert_torch`` and
+    the old module keeps only a deprecation warning, so importing the name a
+    tutorial gives you gets an AttributeError on ``convert`` rather than a
+    message saying where it went.
+    """
+    try:
+        import litert_torch
+    except ImportError as e:
+        raise ExportError(
+            "lowering for 'litert' needs litert-torch, which arrives with "
+            f"ai-edge-torch and is not installed here ({e}). Note that it pins "
+            "torch below 2.13, which is the version this project settles on for "
+            "that reason."
+        ) from e
+
+    try:
+        litert_torch.convert(model.eval(), example).export(str(out_path))
+    except Exception as e:  # noqa: BLE001 - re-raised with what to do about it
+        raise ExportError(
+            f"the LiteRT conversion failed ({type(e).__name__}: {str(e).strip()[:200]})"
+        ) from e
+    return out_path.read_bytes()
+
+
 #: Every backend this exporter knows, in the order a caller meets them: the one
 #: that delegates nothing, the two that run anywhere the toolchain is installed,
 #: then the ones that need an accelerator or a vendor SDK.
@@ -528,7 +559,23 @@ def export_model(
     golden_dir = out_dir / "goldens"
     golden_dir.mkdir(parents=True, exist_ok=True)
 
-    if runtime == "onnx":
+    if runtime == "litert":
+        if recipe is not None:
+            raise ExportError(
+                "the quantization recipes are built on ExecuTorch's XNNPACK "
+                "quantizer, so they describe an ExecuTorch lowering and nothing "
+                "about a LiteRT one. LiteRT quantizes through its own converter."
+            )
+        if taps:
+            raise ExportError(
+                "taps address an intermediate by the debug handle ExecuTorch's "
+                "exporter emits, and a LiteRT graph carries no such handle. "
+                "Attribution needs runtime='executorch' with backend='portable'."
+            )
+        artifact = out_dir / f"{name}.tflite"
+        buffer = _lower_litert(model, example, artifact)
+        graph_handles, precision = {}, None
+    elif runtime == "onnx":
         if recipe is not None:
             raise ExportError(
                 "the quantization recipes are built on ExecuTorch's XNNPACK "

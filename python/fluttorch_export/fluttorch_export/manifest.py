@@ -31,7 +31,7 @@ DYNAMIC_DIM = -1
 #: runtime. XNNPACK is an ExecuTorch delegate and CoreMLExecutionProvider is an
 #: ONNX Runtime provider, and collapsing the two axes into one field is how a
 #: bundle ends up describing a combination that does not exist.
-RUNTIMES: frozenset[str] = frozenset({"executorch", "onnx"})
+RUNTIMES: frozenset[str] = frozenset({"executorch", "litert", "onnx"})
 
 #: Compute precisions a delegate can be lowered at, and that the gate can size a
 #: bound for. Float32 is written as absence rather than as a name, so a manifest

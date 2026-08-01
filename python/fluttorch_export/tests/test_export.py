@@ -375,20 +375,26 @@ class TestQuantization:
         # whose manifest forgot it is one the gate cannot judge.
         assert f'"quantization": "{recipe}"' in result.manifest_path.read_text()
 
-    def test_int8_static_names_the_toolchain_that_cannot_convert_it(self, tmp_path) -> None:
-        # torchao introspects an operator overload that torch 2.13 does not
-        # expose, before the model is involved. Asserting the translated message
-        # rather than skipping keeps the failure visible: the day the toolchain
-        # is fixed, this test fails and the entry describing it is removed.
-        with pytest.raises(ExportError, match="cannot be converted by the installed"):
-            export_model(
-                model=sample_model.build(),
-                example_inputs=sample_model.example_inputs(),
-                out_dir=tmp_path / "static",
-                name="two_layer",
-                golden_inputs=sample_model.golden_cases(),
-                quantization="int8-static",
-            )
+    def test_int8_static_exports_on_this_toolchain(self, tmp_path) -> None:
+        # It did not, and the test that said so was written to fail the day it
+        # started to. It failed on the day LiteRT's converter was installed:
+        # litert-torch pins torch below 2.13 and executorch has no upper bound,
+        # so pip settled both on 2.12, which does not have the overload torchao
+        # introspected and could not find.
+        #
+        # The recipe is asserted rather than the message now, and _convert_failure
+        # keeps translating whatever the next incompatibility turns out to be.
+        result = export_model(
+            model=sample_model.build(),
+            example_inputs=sample_model.example_inputs(),
+            out_dir=tmp_path / "static",
+            name="two_layer",
+            golden_inputs=sample_model.golden_cases(),
+            quantization="int8-static",
+        )
+
+        assert result.manifest.quantization == "int8-static"
+        assert result.artifact.stat().st_size > 0
 
     def test_a_static_recipe_refuses_a_single_case(self, tmp_path) -> None:
         with pytest.raises(QuantizationError, match="represent the job"):
