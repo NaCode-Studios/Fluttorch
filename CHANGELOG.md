@@ -11,6 +11,11 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
 
 ### Fixed
 
+- Compiled Python is no longer committed. Nineteen `.pyc` files were tracked, each
+  carrying the absolute path of the machine that built it, and `.gitignore` had no
+  Python section at all, so they returned every time anyone ran the suite. They stay
+  in the history, which rewriting would cost every tag and every published release to
+  remove; what stops is adding more.
 - The publish jobs are written out rather than calling
   `dart-lang/setup-dart/.github/workflows/publish.yml`. That workflow declares
   `permissions: id-token: write` on its own job, and a permissions block in a
