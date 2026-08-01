@@ -375,23 +375,31 @@ class TestQuantization:
         # whose manifest forgot it is one the gate cannot judge.
         assert f'"quantization": "{recipe}"' in result.manifest_path.read_text()
 
-    def test_int8_static_exports_on_this_toolchain(self, tmp_path) -> None:
-        # It did not, and the test that said so was written to fail the day it
-        # started to. It failed on the day LiteRT's converter was installed:
-        # litert-torch pins torch below 2.13 and executorch has no upper bound,
-        # so pip settled both on 2.12, which does not have the overload torchao
-        # introspected and could not find.
+    def test_int8_static_either_exports_or_names_the_toolchain(self, tmp_path) -> None:
+        # Whether this recipe converts is a property of the torch a machine
+        # resolved, not of this repository. torchao introspects an operator
+        # overload that torch 2.13 does not expose, before the model is involved,
+        # and 2.12 does. Both versions are reachable: litert-torch pins below 2.13
+        # and executorch has no upper bound, and which one pip picks differs by
+        # platform, so a macOS checkout converts it and a Linux runner does not.
         #
-        # The recipe is asserted rather than the message now, and _convert_failure
-        # keeps translating whatever the next incompatibility turns out to be.
-        result = export_model(
-            model=sample_model.build(),
-            example_inputs=sample_model.example_inputs(),
-            out_dir=tmp_path / "static",
-            name="two_layer",
-            golden_inputs=sample_model.golden_cases(),
-            quantization="int8-static",
-        )
+        # Asserting either outcome universally is asserting something about one
+        # machine. What holds everywhere is that it converts and says so, or
+        # refuses and names the combination at fault: a bare crash or a manifest
+        # that forgot the recipe fails this either way.
+        try:
+            result = export_model(
+                model=sample_model.build(),
+                example_inputs=sample_model.example_inputs(),
+                out_dir=tmp_path / "static",
+                name="two_layer",
+                golden_inputs=sample_model.golden_cases(),
+                quantization="int8-static",
+            )
+        except ExportError as e:
+            assert "cannot be converted by the installed toolchain" in str(e)
+            assert "torch" in str(e)
+            return
 
         assert result.manifest.quantization == "int8-static"
         assert result.artifact.stat().st_size > 0
