@@ -49,15 +49,16 @@ exported with `torch.export` and makes the boundary between Python and Dart type
 workflow that runs the gate on every pull request is in
 [`docs/ci-parity-gate.md`](docs/ci-parity-gate.md).
 
-> **Status — `0.5.0`, early development.** The loop from `torch.export` to a typed Dart API to a
-> parity gate now runs on hardware. Fluttorch has its own `dart:ffi` binding to ExecuTorch, and one
-> report replays the same goldens across every backend a machine offers: on an M-series Mac that is
-> four columns, and none of them answers to the same bound, because the manifest records the recipe
-> and the precision each artifact was lowered with. A drift can be attributed to the layer that
-> caused it, by reading intermediates off the device rather than inferring them.
-> What it does not do yet is reach a phone. The native half is built per machine by
-> `tool/build_native.sh` and there is no iOS or Android packaging, so every number here comes from a
-> laptop and `fluttorch_executorch` stays unpublished.
+> **Status — `0.6.0`, early development.** The loop from `torch.export` to a typed Dart API to a
+> parity gate runs on hardware, and it reaches a phone. The binding cross-compiles for Android arm64
+> and for iOS, and a model quantized to `int8-dynamic` runs on an Android device with drift identical
+> to the laptop's in every digit reported. Three engines answer to one C ABI, ExecuTorch, ONNX Runtime
+> and LiteRT, so the manifest, the goldens and the gate stay unchanged when the engine changes, and a
+> bundle exported for one of them is refused by the other two rather than half-loaded. Inference runs
+> on a worker isolate instead of the thread that draws.
+> What it does not do yet is prove any of that on a model that can go wrong. Every number here comes
+> from a two-layer network, the tolerances are starting points rather than measurements, and
+> `fluttorch_executorch` stays unpublished because pub.dev cannot carry the native half.
 > The [board](https://github.com/orgs/NaCode-Studios/projects/6) is the plan of record and tracks it
 > milestone by milestone. Until `1.0`, minor versions may break.
 
@@ -127,7 +128,10 @@ python/fluttorch_export     torch.export → artifact + signed manifest + golden
 packages/fluttorch          manifest, tensor specs, drift metrics, runtime interface
         ├── fluttorch_gen         manifest → typed Dart API (build_runner)
         ├── fluttorch_test        golden replay, parity matchers, drift reports
-        └── fluttorch_executorch  first backend
+        ├── fluttorch_executorch  the C ABI, and ExecuTorch behind it
+        ├── fluttorch_onnx        the same ABI, over ONNX Runtime
+        ├── fluttorch_litert      the same ABI, over LiteRT
+        └── fluttorch_executorch_flutter  the native half, inside a Flutter app
 ```
 
 | Package | Role |
@@ -135,7 +139,9 @@ packages/fluttorch          manifest, tensor specs, drift metrics, runtime inter
 | [`fluttorch`](https://pub.dev/packages/fluttorch) | The contract and the seam. No backend may be imported here. |
 | [`fluttorch_gen`](https://pub.dev/packages/fluttorch_gen) | `build_runner` builder: `*.fluttorch.json` → `*.fluttorch.dart`. |
 | [`fluttorch_test`](https://pub.dev/packages/fluttorch_test) | Replays the goldens, measures drift, fails the build. |
-| `fluttorch_executorch` | ExecuTorch backend, unpublished until it loads a model. LiteRT and ONNX Runtime are planned. |
+| `fluttorch_executorch` | ExecuTorch backend, and the `dart:ffi` client three runtimes share. Unpublished: it carries a native build. |
+| `fluttorch_onnx`, `fluttorch_litert` | The same C ABI over ONNX Runtime and LiteRT. Unpublished, for the same reason. |
+| `fluttorch_executorch_flutter` | Puts the native half inside a Flutter app, on Android and on iOS. |
 | `fluttorch-export` (Python) | Emits the artifact, the manifest and the goldens together. |
 
 ## Roadmap
@@ -155,12 +161,20 @@ owns. Eight backends the exporter knows and reports honestly on the machine it i
 XNNPACK, Core ML and MPS measured rather than described. One parity report across all of them, each
 column answering to the bound its own manifest implies, from the recipe and the precision together.
 
-**Next.** Reaching a phone. The binding is built per machine today, so iOS and Android packaging is
-what stands between this and the thing it was built for, along with running inference off the thread
-that draws the UI.
+**Shipped (`0.6.0`).** Tier 7. The binding reaches a phone: ExecuTorch and the shim cross-compile for
+Android arm64 and for iOS, and `fluttorch_executorch_flutter` puts the result inside an app, as
+`jniLibs` on Android and as an archive force-loaded into the binary on iOS, where an app cannot load
+a dylib from its bundle. ONNX Runtime and LiteRT implement the same C ABI as ExecuTorch, which turns
+the runtime-agnostic claim into something measured, and the manifest now records which engine
+executes an artifact so the wrong one refuses it instead of failing somewhere inside a session.
+Inference runs on a worker isolate rather than on the thread that draws.
 
-**Later.** LiteRT and ONNX Runtime, which is what turns the runtime-agnostic claim into something
-measured rather than stated, and a model large enough that the backends can disagree.
+**Next.** A documentation site, an example that is a real application rather than a test, and an
+error taxonomy that says what a reader should do about each failure.
+
+**Later.** The evidence this rests on. The tolerances are starting points and should be measured; the
+matrix should carry a model large enough for the backends to disagree; and coverage stops at one
+input and one output.
 
 The [board](https://github.com/orgs/NaCode-Studios/projects/6) carries the milestone plan and its
 exit criteria, and every tier is a [milestone](https://github.com/NaCode-Studios/Fluttorch/milestones)

@@ -1,6 +1,6 @@
 name: fluttorch
 description: Runtime-agnostic core for shipping PyTorch models to Flutter. Model manifests, tensor specs, drift metrics, and the backend interface.
-version: 0.5.0
+version: 0.6.0
 repository: https://github.com/NaCode-Studios/Fluttorch
 homepage: https://nacodestudios.it/en/project/fluttorch
 issue_tracker: https://github.com/NaCode-Studios/Fluttorch/issues

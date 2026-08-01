@@ -9,9 +9,11 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-02
+
 ### Added
 
-- Inference runs off the thread that draws (M28). Every call through the FFI seam
+- Inference runs off the thread that draws. Every call through the FFI seam
   is synchronous, and the Dart API above it returned futures that never suspended,
   so in a Flutter app a model ran on the platform thread for as long as it took.
   `IsolateExecuTorchRuntime` moves the native side onto a worker isolate: the
@@ -19,7 +21,7 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
   an `ft_model_t` is not safe to touch from two threads and a handle that crossed
   back would be exactly that. It costs a copy of every tensor each way, which the
   class says rather than implies.
-- The binding reaches a phone (M26, M27). ExecuTorch and the shim cross-compile
+- The binding reaches a phone. ExecuTorch and the shim cross-compile
   for `arm64-v8a` and for `arm64-apple-ios`, and `fluttorch_executorch_flutter`
   puts the result inside an app: `jniLibs` on Android, a vendored static archive
   force-loaded into the binary on iOS, where an app cannot load a dylib from its
@@ -52,9 +54,6 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
   passes every check and carries no weights is the failure this project exists to
   prevent. The empty sidecar written for every export is removed rather than
   shipped.
-
-
-
 - `int8-static` exports where the toolchain allows it, and says why where it does
   not. torchao introspects an operator overload torch 2.13 does not expose, before
   the model is involved, and 2.12 does. Both are reachable: `litert-torch` pins
@@ -62,6 +61,14 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
   differs by platform, so a macOS checkout converts the recipe and a Linux runner
   refuses it. The suite asserts what holds on either: it converts and the manifest
   says which recipe, or it refuses and names the combination at fault.
+
+### Internal
+
+- The on-device workflow clones ExecuTorch under the only directory name it
+  accepts. Upstream's CMakeLists refuses to configure under anything but
+  `executorch`, and this cloned into `.executorch` to keep a multi-gigabyte
+  checkout out of Dart's way, so the job failed to configure the first time it
+  was dispatched.
 
 ## [0.5.0] - 2026-08-01
 
@@ -537,7 +544,8 @@ user can invoke yet, which is what `0.0.1` says that a minor would overstate.
   needs neither `torch` nor `executorch`.
 - 109 tests: 90 Dart across three packages, 19 Python.
 
-[Unreleased]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.2.0...v0.3.0

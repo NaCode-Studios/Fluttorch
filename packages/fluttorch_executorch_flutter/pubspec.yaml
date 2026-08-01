@@ -2,7 +2,7 @@ name: fluttorch_executorch_flutter
 description: >-
   Ships the compiled ExecuTorch binding to a device. The Dart API lives in
   fluttorch_executorch; this package is what puts its native half inside an app.
-version: 0.6.0-dev
+version: 0.6.0
 repository: https://github.com/NaCode-Studios/Fluttorch
 issue_tracker: https://github.com/NaCode-Studios/Fluttorch/issues
 publish_to: none
