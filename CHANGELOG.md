@@ -114,9 +114,9 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
   are listed as not run rather than omitted, since an absent column and an agreeing column
   look identical once a table is printed.
 - Backend claims are checked on hardware, or recorded as not checked (M25). The `Backends`
-  workflow runs the export suite on a Linux runner, where what it verifies is mostly the
-  negative: a machine with no Apple GPU stack says it cannot lower for Core ML, MPS or
-  Metal and names what each would need. The `On device` workflow builds ExecuTorch on an
+  workflow runs the export suite on a Linux runner, which keeps the two halves of a
+  backend claim apart: that runner lowers for Core ML and MPS, which it could never run,
+  and refuses Metal, MLX and QNN by naming the toolchain each would need. The `On device` workflow builds ExecuTorch on an
   Apple silicon runner and runs the parity matrix there, weekly and on demand rather than
   on every push, because a gate that takes the better part of an hour on every push is one
   somebody eventually routes around. `docs/backend-coverage.md` records which half of each

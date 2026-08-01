@@ -2,10 +2,11 @@ name: Backends
 
 # What a machine without Apple's GPU stack can lower for, checked on one.
 #
-# The export half of every backend claim is verifiable anywhere, and the claim
-# worth checking off this laptop is the negative one: that a Linux runner with
-# no Core ML, no MPS and no Metal says so and names what it would need, rather
-# than failing with an ImportError from three libraries down.
+# The export half of every backend claim is verifiable anywhere, and running it
+# somewhere other than a Mac is what keeps the two halves apart. This runner
+# lowers for Core ML and MPS, which it could never run, and refuses Metal, MLX
+# and QNN by naming the toolchain each would need rather than failing with an
+# ImportError from three libraries down.
 #
 # Not on every pull request. Installing torch and executorch is gigabytes and
 # minutes, and a gate that slow on every push is one somebody eventually routes

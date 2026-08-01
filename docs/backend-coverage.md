@@ -10,11 +10,16 @@ listing eight backends, which reads as eight backends that work.
 
 ## The two questions, and where each is answered
 
-The export half is checked by the `Backends` workflow, on a Linux runner. What it verifies there is
-mostly the negative: a machine with no Apple GPU stack reports that it cannot lower for Core ML, MPS
-or Metal, and names the toolchain each would need. `available_backends()` answers by lowering a
-one-operation model rather than by importing a partitioner, so the list is what worked rather than
-what imported.
+The export half is checked by the `Backends` workflow, on a Linux runner. `available_backends()`
+answers by lowering a one-operation model rather than by importing a partitioner, so the list is
+what worked rather than what imported.
+
+That runner reports `portable`, `xnnpack`, `coreml`, `mps` and `vulkan` as available, and refuses
+`metal`, `mlx` and `qnn` with the toolchain each would need. Core ML and MPS being on the first list
+is the clearest illustration of why this page splits the question in two: coremltools installs on
+Linux and lowers there quite happily, and the artifact it produces cannot run on that machine under
+any circumstances. Lowering for a backend and running on it are separate claims, and only one of
+them is answerable off the hardware.
 
 The runtime half is checked by the `On device` workflow, on an Apple silicon runner, weekly and on
 demand rather than on every pull request. Building ExecuTorch is the better part of an hour, and a
