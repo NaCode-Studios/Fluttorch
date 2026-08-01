@@ -43,13 +43,13 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
 
 ### Fixed
 
-- `int8-static` exports. It never had: torchao introspected an operator overload
-  torch 2.13 does not expose, before the model was involved, and a test asserted
-  the translated failure so it would break the day the toolchain stopped having
-  the problem. It broke when LiteRT's converter was installed, because
-  `litert-torch` pins torch below 2.13 and `executorch` has no upper bound, so
-  both settled on 2.12. The recipe now exports and its goldens are the source
-  model's.
+- `int8-static` exports where the toolchain allows it, and says why where it does
+  not. torchao introspects an operator overload torch 2.13 does not expose, before
+  the model is involved, and 2.12 does. Both are reachable: `litert-torch` pins
+  torch below 2.13 and `executorch` has no upper bound, and which one pip picks
+  differs by platform, so a macOS checkout converts the recipe and a Linux runner
+  refuses it. The suite asserts what holds on either: it converts and the manifest
+  says which recipe, or it refuses and names the combination at fault.
 
 ## [0.5.0] - 2026-08-01
 
