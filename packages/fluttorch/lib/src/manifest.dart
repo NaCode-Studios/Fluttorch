@@ -19,6 +19,7 @@ final class ModelManifest {
     this.labels,
     this.goldens = const [],
     this.activations = const [],
+    this.activationHandles = const [],
   });
 
   /// Schema version this build writes, and the highest it can read.
@@ -70,6 +71,19 @@ final class ModelManifest {
   /// Empty is the ordinary case, and it costs exactly one thing: a failing gate
   /// can name the output that was wrong but not the layer that made it wrong.
   final List<TensorSpec> activations;
+
+  /// Where each tap lives in the lowered graph, positional with [activations].
+  ///
+  /// A runtime reads an intermediate by the handle the artifact carries, since
+  /// submodule names do not survive lowering. Only the export sees both, so it
+  /// records the correspondence here rather than leaving each runtime to guess
+  /// at one.
+  ///
+  /// Empty when the export could not observe the layers it declared, which is
+  /// what a fully delegated graph is. A reader without handles can still compare
+  /// the reference activations it was given, and simply cannot ask a device for
+  /// its own.
+  final List<int> activationHandles;
 
   /// Whether any preprocessing step is unrecognised by this build.
   ///

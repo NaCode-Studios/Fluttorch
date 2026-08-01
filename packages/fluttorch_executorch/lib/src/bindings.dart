@@ -42,15 +42,21 @@ abstract interface class NativeModel {
   /// Runs inference, writing into [outputs], which the caller owns.
   void run(List<Tensor> inputs, List<Tensor> outputs);
 
-  /// Runs inference and captures the named intermediates.
+  /// Runs inference and captures the selected intermediates.
   ///
-  /// A layer the graph does not carry is absent from the result rather than
-  /// zero-filled: the gate has to tell a layer that agreed from a layer nobody
-  /// looked at, and a zero-filled tensor reads as the first.
-  Map<String, Tensor> runWithTaps(
+  /// [handles] selects the taps by what the artifact calls them, which is the
+  /// debug handle the export recorded and never the submodule name: names do
+  /// not survive lowering. [activations] are the buffers to fill, positional
+  /// with [handles] and owned by the caller like every other output here.
+  ///
+  /// Returns the positions that were filled. A layer the graph does not run is
+  /// left out rather than zero-filled: the gate has to tell a layer that agreed
+  /// from a layer nobody looked at, and a zero-filled tensor reads as the first.
+  Set<int> runWithTaps(
     List<Tensor> inputs,
     List<Tensor> outputs,
-    List<String> layers,
+    List<Tensor> activations,
+    List<int> handles,
   );
 
   void dispose();

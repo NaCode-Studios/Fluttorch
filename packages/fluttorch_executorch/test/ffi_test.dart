@@ -49,6 +49,9 @@ ModelManifest _manifest() => ModelManifest(
     TensorSpec(name: 'encoder.0', dtype: DType.float32, shape: [2]),
     TensorSpec(name: 'encoder.1', dtype: DType.float32, shape: [2]),
   ],
+  // Where the export found each tap in the lowered graph. The second is
+  // negative, which the stub reads as a layer the graph does not run.
+  activationHandles: const [7, -1],
   goldens: const [
     GoldenCase(
       id: 'case-0',
@@ -182,17 +185,35 @@ void main() {
         const TensorSpec(name: 'score', dtype: DType.float32, shape: [2]),
       );
 
-      final activations = model.runWithTaps(
+      final buffers = [
+        Tensor.zeros(
+          const TensorSpec(name: 'a', dtype: DType.float32, shape: [2]),
+        ),
+        Tensor.zeros(
+          const TensorSpec(name: 'b', dtype: DType.float32, shape: [2]),
+        ),
+        Tensor.zeros(
+          const TensorSpec(name: 'c', dtype: DType.float32, shape: [2]),
+        ),
+      ];
+
+      // The middle one is the layer the graph does not run. A count could not
+      // express that, which is why what comes back is a set of positions.
+      final filled = model.runWithTaps(
         [
           _f32('features', [1, 2]),
         ],
         [output],
-        ['encoder.0', 'encoder.1'],
+        buffers,
+        const [7, -1, 9],
       );
 
-      expect(activations.keys, ['encoder.0']);
-      expect(activations['encoder.0']!.shape, [2]);
-      expect(activations['encoder.0']!.spec.dtype, DType.float32);
+      expect(filled, {0, 2});
+      // Written through into the caller's own buffers, and the gap left exactly
+      // as it was supplied rather than zero-filled by the binding.
+      expect(buffers[0].bytes.every((b) => b == 7), isTrue);
+      expect(buffers[1].bytes.every((b) => b == 0), isTrue);
+      expect(buffers[2].bytes.every((b) => b == 9), isTrue);
       model.dispose();
     });
 
@@ -210,7 +231,12 @@ void main() {
             _f32('features', [1, 2]),
           ],
           [output],
-          const ['encoder.0'],
+          [
+            Tensor.zeros(
+              const TensorSpec(name: 'a', dtype: DType.float32, shape: [2]),
+            ),
+          ],
+          const [1],
         ),
         throwsA(isA<FluttorchException>()),
       );

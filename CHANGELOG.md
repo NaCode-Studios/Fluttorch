@@ -56,10 +56,26 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
   reduction; Core ML chooses between the Neural Engine and the GPU and promises no such
   thing, so asking it for deterministic execution is refused rather than granted and
   hoped for.
-- Activation taps are reported absent by this build rather than answered with nothing
-  captured. Reading intermediates needs an event tracer and an artifact carrying debug
-  handles, and neither is linked yet, so a gate asking for attribution is told it cannot
-  have it instead of receiving a run in which every layer appears to agree.
+- Activation taps read intermediates off the device (M20), which is the last of the four
+  hooks the ABI was declared around. A tracer built into the binding keeps the layers a
+  caller asked for and drops the rest, so answering for three layers does not copy the
+  whole graph. On the two-layer model all three declared taps come back: the activation
+  is exactly the ReLU of the layer before it, the last tap is the model's output, and
+  each one matches the reference the export captured to within `1e-5`.
+- The manifest records where each tap lives in the lowered graph (M20). Submodule names
+  do not survive lowering, so a runtime addresses an intermediate by debug handle and by
+  nothing else; only the export sees both names and handles, and `activation_handles`
+  is where it writes the correspondence down. Additive, like the activations it is
+  positional with.
+- Taps are refused on a delegated backend rather than declared and left unanswerable. A
+  delegated partition is one instruction carrying no layer inside it, so `fc1` is not
+  slow to reach within an XNNPACK partition, it is absent from it. A bundle promising
+  attribution the device can never deliver reports every layer missing on every run,
+  which reads exactly like every layer agreeing. The refusal names the way out.
+- The exporter lowers for `portable` as well as the two delegates (M20), which is the
+  export that makes attribution possible: no partitioner, every operation in the
+  runtime's own kernels. Slower than any delegate and not what a device would ship,
+  which is the point of having it separately.
 - `NativeExecuTorchBindings` binds that ABI over `dart:ffi`, and is tested against a
   C library the suite compiles and calls. A Dart fake cannot check struct field
   offsets, arrays of strings or pointer arithmetic over tensor arrays, because a

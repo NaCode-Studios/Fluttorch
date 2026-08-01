@@ -67,6 +67,23 @@ COREML="$OUT/backends/apple/coreml"
 DEFINES=(-DC10_USING_CUSTOM_GENERATED_MACROS)
 BACKENDS=(-Wl,-force_load,"$OUT/backends/xnnpack/libxnnpack_backend.a")
 
+# Activation taps need the tracer hooks compiled into ExecuTorch itself, which
+# -DEXECUTORCH_BUILD_DEVTOOLS=ON is what turns on. The hooks are #ifdef'd in the
+# executor, so a shim compiled with the flag against a runtime built without it
+# would collect nothing and report every layer absent.
+#
+# Asked of the flags the runtime was compiled with rather than of its symbols,
+# because what the flag controls is a call inside an existing function: the
+# tracer hooks are header inlines and no symbol appears or disappears with them.
+ETCORE_FLAGS="$OUT/CMakeFiles/executorch_core.dir/flags.make"
+if [ -f "$ETCORE_FLAGS" ] &&
+   grep ET_EVENT_TRACER_ENABLED "$ETCORE_FLAGS" >/dev/null; then
+  DEFINES+=(-DFLUTTORCH_WITH_TAPS -DET_EVENT_TRACER_ENABLED)
+  echo "linking activation taps"
+else
+  echo "no event tracer in $OUT; taps will report absent"
+fi
+
 # grep reads to the end rather than stopping at the first hit: under pipefail a
 # `grep -q` that exits early leaves nm killed by SIGPIPE, and the test reports no
 # Core ML on a checkout that has it.

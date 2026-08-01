@@ -107,12 +107,62 @@ final class _ExecuTorchModel implements LoadedModel {
     }
     checkTensorsAgainst(manifest.inputs, inputs, role: 'input');
 
-    final outputs = _allocateOutputs();
+    // A manifest with taps but no handles is one the export could not resolve
+    // against the lowered graph, which is what a delegated artifact is. Refused
+    // here rather than run: every layer would come back absent, and a caller
+    // cannot tell that from a model whose layers all agreed.
+    if (manifest.activations.isNotEmpty && manifest.activationHandles.isEmpty) {
+      throw CapabilityUnavailableException(
+        backend: backend,
+        capability:
+            'activation taps: this export records no handle for any of its '
+            '${manifest.activations.length} declared activations, so nothing '
+            'on the device can be asked for one',
+      );
+    }
+
     final wanted =
         layers ?? [for (final spec in manifest.activations) spec.name];
-    final activations = _native.runWithTaps(inputs, outputs, wanted);
+    final selected = [
+      for (final name in wanted)
+        _tapIndex(name) ??
+            (throw ArgumentError.value(
+              name,
+              'layers',
+              'is not a tap this export declared; it has '
+                  '${manifest.activations.map((s) => s.name).join(", ")}',
+            )),
+    ];
 
-    return TappedRun(outputs: outputs, activations: activations);
+    final outputs = _allocateOutputs();
+    // Sized from the contract, like the outputs and for the same reason: the
+    // native side writes into buffers this side already owns.
+    final buffers = [
+      for (final i in selected) Tensor.zeros(manifest.activations[i]),
+    ];
+
+    final filled = _native.runWithTaps(inputs, outputs, buffers, [
+      for (final i in selected) manifest.activationHandles[i],
+    ]);
+
+    return TappedRun(
+      outputs: outputs,
+      // Only what was filled. A buffer nobody wrote to is all zeros, and a gate
+      // reads a zero as a layer that agreed.
+      activations: {
+        for (var slot = 0; slot < selected.length; slot++)
+          if (filled.contains(slot))
+            manifest.activations[selected[slot]].name: buffers[slot],
+      },
+    );
+  }
+
+  /// Position of the tap named [name] in the manifest, or null if it declares none.
+  int? _tapIndex(String name) {
+    for (var i = 0; i < manifest.activations.length; i++) {
+      if (manifest.activations[i].name == name) return i;
+    }
+    return null;
   }
 
   @override

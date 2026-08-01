@@ -136,7 +136,7 @@ ft_status_t ft_run(ft_model_t* model, const ft_tensor_t* inputs,
 
 ft_status_t ft_run_with_taps(ft_model_t* model, const ft_tensor_t* inputs,
                              int32_t input_count, ft_tensor_t* outputs,
-                             int32_t output_count, const char** layer_names,
+                             int32_t output_count, const int64_t* layer_handles,
                              int32_t layer_count, ft_tensor_t* out_activations,
                              int32_t* out_captured) {
   if (out_captured == NULL) {
@@ -148,22 +148,17 @@ ft_status_t ft_run_with_taps(ft_model_t* model, const ft_tensor_t* inputs,
   ft_status_t status = run_into(model, inputs, input_count, outputs, output_count);
   if (status != FT_OK) return status;
 
-  // Every layer but the last is captured. A graph that does not carry a
-  // requested tap leaves it out, and the caller is told how many were filled
-  // rather than being handed a zeroed tensor that reads as agreement.
-  int32_t captured = layer_count > 0 ? layer_count - 1 : 0;
-  static int64_t shape[1] = {2};
-  static uint8_t bytes[8] = {0};
-  for (int32_t i = 0; i < captured; i++) {
-    bytes[0] = (uint8_t)(i + 1);
-    out_activations[i].data = bytes;
-    out_activations[i].byte_length = 8;
-    out_activations[i].shape = shape;
-    out_activations[i].rank = 1;
-    out_activations[i].dtype = 0; // float32
+  // A negative handle stands for a layer this graph does not run, so the suite
+  // can exercise a sparse result: what comes back is a mask and not a count
+  // precisely because the gaps need not be at the end.
+  int32_t captured = 0;
+  for (int32_t i = 0; i < layer_count; i++) {
+    if (layer_handles[i] < 0) continue;
+    memset(out_activations[i].data, (int)(layer_handles[i] & 0xff),
+           (size_t)out_activations[i].byte_length);
+    captured |= 1 << i;
   }
   *out_captured = captured;
-  (void)layer_names;
   return FT_OK;
 }
 
