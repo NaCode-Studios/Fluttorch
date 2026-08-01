@@ -2,6 +2,13 @@
 # Builds the native half of the binding against a checkout of ExecuTorch.
 #
 #   tool/build_native.sh [path-to-executorch]
+#   tool/build_native.sh --android [path-to-executorch]
+#
+# The second cross-compiles for arm64-v8a against a checkout configured with the
+# NDK's toolchain file, and writes a .so an APK can carry. It reads
+# cmake-out-android rather than cmake-out, because a host build and a device
+# build cannot share an output directory and a script that let them would produce
+# a library for the wrong architecture without saying so.
 #
 # Writes .dart_tool/native/libfluttorch_executorch.{dylib,so}, which is what the
 # integration test loads. Nothing else in the repository needs it: the unit
@@ -49,9 +56,34 @@
 # to fire and is not: the branch runs, and hands it sources that are not there.
 set -euo pipefail
 
+TARGET=host
+if [ "${1:-}" = "--android" ]; then TARGET=android; shift; fi
+
 ET="${1:-$HOME/.cache/fluttorch/executorch}"
-OUT="$ET/cmake-out"
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Forcing a static archive to be linked whole is spelled differently by the two
+# linkers, and a backend registers itself from a static initialiser that neither
+# keeps otherwise. Getting this wrong produces a library that loads and reports
+# no backend, which is the failure that looks like a missing model.
+#
+# It sets an array rather than printing one because macOS ships bash 3.2, where
+# readarray does not exist: this script runs on the machine that has the NDK, and
+# that is a Mac.
+if [ "$TARGET" = android ]; then
+  OUT="$ET/cmake-out-android"
+  NDK="${ANDROID_NDK:-$(ls -d "$HOME/Library/Android/sdk/ndk"/* 2>/dev/null | sort -V | tail -1)}"
+  [ -n "$NDK" ] && [ -d "$NDK" ] || {
+    echo "no NDK found; set ANDROID_NDK to one" >&2
+    exit 1
+  }
+  CXX_BIN="$NDK/toolchains/llvm/prebuilt/$(uname -s | tr '[:upper:]' '[:lower:]')-x86_64/bin/aarch64-linux-android26-clang++"
+  force_load() { FORCE=(-Wl,--whole-archive "$1" -Wl,--no-whole-archive); }
+else
+  OUT="$ET/cmake-out"
+  CXX_BIN="${CXX:-c++}"
+  force_load() { FORCE=(-Wl,-force_load,"$1"); }
+fi
 
 [ -f "$OUT/libexecutorch.a" ] || {
   echo "no build under $OUT. Configure and build ExecuTorch first; the header of" >&2
@@ -59,10 +91,19 @@ HERE="$(cd "$(dirname "$0")/.." && pwd)"
   exit 1
 }
 
-case "$(uname -s)" in
-  Darwin) LIB=libfluttorch_executorch.dylib; SHARED=(-dynamiclib -framework Accelerate -framework Foundation) ;;
-  *)      LIB=libfluttorch_executorch.so;    SHARED=(-shared -fPIC) ;;
-esac
+if [ "$TARGET" = android ]; then
+  LIB=libfluttorch_executorch.so
+  # --no-undefined because a shared object on Android links happily with symbols
+  # it cannot resolve and fails at dlopen instead, on the device, in front of a
+  # user. -llog is what ExecuTorch's platform layer logs through.
+  SHARED=(-shared -fPIC -Wl,--no-undefined -llog)
+elif [ "$(uname -s)" = Darwin ]; then
+  LIB=libfluttorch_executorch.dylib
+  SHARED=(-dynamiclib -framework Accelerate -framework Foundation)
+else
+  LIB=libfluttorch_executorch.so
+  SHARED=(-shared -fPIC)
+fi
 
 mkdir -p "$HERE/.dart_tool/native"
 
@@ -72,7 +113,8 @@ mkdir -p "$HERE/.dart_tool/native"
 # asking is not whether the file is there but whether it carries its SDK half.
 COREML="$OUT/backends/apple/coreml"
 DEFINES=(-DC10_USING_CUSTOM_GENERATED_MACROS)
-BACKENDS=(-Wl,-force_load,"$OUT/backends/xnnpack/libxnnpack_backend.a")
+force_load "$OUT/backends/xnnpack/libxnnpack_backend.a"
+BACKENDS=("${FORCE[@]}")
 
 # Activation taps need the tracer hooks compiled into ExecuTorch itself, which
 # -DEXECUTORCH_BUILD_DEVTOOLS=ON is what turns on. The hooks are #ifdef'd in the
@@ -98,8 +140,9 @@ if [ "$(uname -s)" = "Darwin" ] && [ -f "$COREML/libcoremldelegate.a" ] &&
    nm -g --defined-only "$COREML/libcoremldelegate.a" 2>/dev/null |
      grep ETCoreMLModelAnalyzer >/dev/null; then
   DEFINES+=(-DFLUTTORCH_WITH_COREML)
+  force_load "$COREML/libcoremldelegate.a"
   BACKENDS+=(
-    -Wl,-force_load,"$COREML/libcoremldelegate.a"
+    "${FORCE[@]}"
     "$COREML/libcoreml_util.a"
     "$COREML/libcoreml_inmemoryfs.a"
     "$COREML/third-party/coremltools/deps/protobuf/cmake/libprotobuf-lite.a"
@@ -125,7 +168,8 @@ link_backend() {
     return
   fi
   DEFINES+=("$define")
-  BACKENDS+=(-Wl,-force_load,"$archive")
+  force_load "$archive"
+  BACKENDS+=("${FORCE[@]}")
   if [ "$#" -gt 0 ]; then SHARED+=("$@"); fi
   echo "linking $name"
 }
@@ -142,16 +186,26 @@ link_backend QNN "$OUT/backends/qualcomm/libqnn_executorch_backend.a" -DFLUTTORC
 
 # The parent of the checkout, because ExecuTorch's own headers include each other
 # as executorch/... and the checkout directory is that "executorch".
-c++ -std=c++17 -O2 -c "$HERE/src/fluttorch_executorch.cpp" -o "$HERE/.dart_tool/native/shim.o" \
+"$CXX_BIN" -std=c++17 -O2 -fPIC -c "$HERE/src/fluttorch_executorch.cpp" -o "$HERE/.dart_tool/native/shim.o" \
   -I "$HERE/src" -I "$(dirname "$ET")" -I "$ET/runtime/core/portable_type/c10" \
   "${DEFINES[@]}"
 
 # A backend registers itself from a static initialiser, which a linker drops from
 # a static library nobody references by symbol. force_load is what keeps it, and
 # without it the library loads and reports no backend at all.
-c++ -std=c++17 "${SHARED[@]}" -o "$HERE/.dart_tool/native/$LIB" "$HERE/.dart_tool/native/shim.o" \
+force_load "$OUT/kernels/portable/libportable_ops_lib.a"
+OPS=("${FORCE[@]}")
+
+# flatcc is built by an ExternalProject that does not cross-compile, so the
+# archive under a device build is a host one the device linker skips with a
+# warning. Nothing in these targets references it, and asking for it anyway
+# would trade a real warning for a confusing one.
+FLATCC=()
+[ "$TARGET" = host ] && FLATCC=("$OUT/third-party/flatcc_ep/lib/libflatccrt.a")
+
+"$CXX_BIN" -std=c++17 "${SHARED[@]}" -o "$HERE/.dart_tool/native/$LIB" "$HERE/.dart_tool/native/shim.o" \
   "${BACKENDS[@]}" \
-  -Wl,-force_load,"$OUT/kernels/portable/libportable_ops_lib.a" \
+  "${OPS[@]}" \
   "$OUT/libexecutorch.a" "$OUT/libexecutorch_core.a" \
   "$OUT/extension/module/libextension_module_static.a" \
   "$OUT/extension/data_loader/libextension_data_loader.a" \
@@ -165,8 +219,7 @@ c++ -std=c++17 "${SHARED[@]}" -o "$HERE/.dart_tool/native/$LIB" "$HERE/.dart_too
   "$OUT/backends/xnnpack/third-party/XNNPACK/libxnnpack-microkernels-prod.a" \
   "$OUT/backends/xnnpack/third-party/cpuinfo/libcpuinfo.a" \
   "$OUT/backends/xnnpack/third-party/pthreadpool/libpthreadpool.a" \
-  "$OUT/kleidiai/libkleidiai.a" \
-  "$OUT/third-party/flatcc_ep/lib/libflatccrt.a"
+  "$OUT/kleidiai/libkleidiai.a" ${FLATCC[@]+"${FLATCC[@]}"}
 
 rm -f "$HERE/.dart_tool/native/shim.o"
-echo "built $HERE/.dart_tool/native/$LIB"
+echo "built $HERE/.dart_tool/native/$LIB ($TARGET)"
