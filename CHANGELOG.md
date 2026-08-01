@@ -31,6 +31,19 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
   goldens land inside the tolerance the recipe starts from, with a drift between
   `1.4e-3` and `3.0e-3`. Held to the full-precision bound instead, the same run fails
   every case, which is what makes the first result mean something.
+- The exporter lowers for Core ML as well as XNNPACK (M21), and an artifact says which
+  one it was lowered for. That half works: a Core ML `.pte` is produced and the manifest
+  records the backend. What is not linked is the Core ML runtime, and the reason is
+  upstream: after working around a submodule missing from `.gitmodules`, a setup script
+  that calls `python`, a vendored protobuf too old for CMake 4 and a googletest it does
+  not ship, `libcoremldelegate.a` still references three SDK classes it does not contain,
+  and the flag that should compile them adds no source to the target. The build script
+  records all five so the next person does not rediscover them one build at a time.
+- The two backends differ in what they can promise, and the binding says so per backend
+  rather than per build. XNNPACK on a single-threaded pool fixes the order of every
+  reduction; Core ML chooses between the Neural Engine and the GPU and promises no such
+  thing, so asking it for deterministic execution is refused rather than granted and
+  hoped for.
 - Activation taps are reported absent by this build rather than answered with nothing
   captured. Reading intermediates needs an event tracer and an artifact carrying debug
   handles, and neither is linked yet, so a gate asking for attribution is told it cannot

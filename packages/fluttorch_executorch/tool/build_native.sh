@@ -18,6 +18,20 @@
 #     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
 #     -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON
 #   cmake --build cmake-out -j
+#
+# Core ML is not linked, and the reason is upstream rather than a decision here.
+# Building it in ExecuTorch 1.3.0 takes four steps the documentation does not
+# mention: the coremltools submodule is referenced by CMakeLists and absent from
+# .gitmodules, so it arrives only through
+# backends/apple/coreml/scripts/install_requirements.sh, which itself invokes
+# `python` and fails where only `python3` is on PATH; the protobuf it vendors
+# needs -DCMAKE_POLICY_VERSION_MINIMUM=3.5 under CMake 4 and
+# -Dprotobuf_BUILD_TESTS=OFF for a googletest it does not ship. After all four,
+# libcoremldelegate.a still references ETCoreMLModelAnalyzer,
+# ETCoreMLModelDebugInfo and ModelEventLoggerImpl without containing them:
+# EXECUTORCH_BUILD_DEVTOOLS=ON is in the cache and the generated build.make for
+# that target carries no SDK source at all. The archive cannot be linked into a
+# shared library until that is fixed or those sources are compiled by hand.
 set -euo pipefail
 
 ET="${1:-$HOME/.cache/fluttorch/executorch}"

@@ -28,11 +28,17 @@ using executorch::runtime::Error;
 
 namespace {
 
-// Only XNNPACK is compiled in today. Core ML is added by M21 and needs the
-// backend registered here as well as linked, so the list is what this build can
-// actually run rather than what ExecuTorch supports.
-const char* const kBackends[] = {"xnnpack"};
-constexpr int32_t kBackendCount = 1;
+// What this build can actually run, which is not what ExecuTorch supports: a
+// backend appears here only once it is both linked and registered, so the list a
+// caller reads is the list that will load rather than a menu of intentions.
+const char* const kBackends[] = {
+    "xnnpack",
+#if defined(FLUTTORCH_WITH_COREML)
+    "coreml",
+#endif
+};
+constexpr int32_t kBackendCount =
+    static_cast<int32_t>(sizeof(kBackends) / sizeof(kBackends[0]));
 
 thread_local std::string g_error;
 
@@ -108,6 +114,11 @@ ft_status_t ft_capabilities(const char* backend, ft_capabilities_t* out) {
                 "not compiled into this build of the binding");
   }
   out->backend = name;
+  // Core ML compiles the model for the Neural Engine or the GPU when it decides
+  // to, and neither promises a fixed reduction order. XNNPACK on a single-thread
+  // pool does, which is the difference between a tolerance measuring the model
+  // and one absorbing the hardware's mood.
+  const bool is_xnnpack = std::strcmp(name, "xnnpack") == 0;
   // Reported as absent rather than assumed present. Reading intermediates needs
   // an event tracer and an artifact carrying debug handles, and this build links
   // neither, so claiming the capability would make the gate attribute a drift it
@@ -115,7 +126,7 @@ ft_status_t ft_capabilities(const char* backend, ft_capabilities_t* out) {
   out->supports_taps = 0;
   // A single-threaded pool fixes the order of every parallel reduction, which is
   // what makes two runs of one input agree bit for bit.
-  out->supports_determinism = 1;
+  out->supports_determinism = is_xnnpack ? 1 : 0;
   out->max_tensor_bytes = 0; // unknown, which is not the same as unlimited
   out->dtypes = kSupportedDtypes;
   return FT_OK;
@@ -148,6 +159,12 @@ ft_status_t ft_load(const uint8_t* artifact, int64_t length, const char* backend
 
   // Loading here rather than lazily on the first run, so a bad artifact fails
   // where the caller can still choose another one.
+  if (deterministic != 0 && std::strcmp(name, "xnnpack") != 0) {
+    return fail(FT_ERROR_CAPABILITY_UNAVAILABLE,
+                std::string("backend ") + name +
+                    " cannot promise a repeatable reduction order");
+  }
+
   const Error error = model->module->load_method("forward");
   if (error != Error::Ok) {
     return fail(FT_ERROR_ARTIFACT_UNREADABLE,

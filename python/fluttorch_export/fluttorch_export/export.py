@@ -136,15 +136,30 @@ def _lower(
     calibration: Sequence[tuple[torch.Tensor, ...]] = (),
 ) -> bytes:
     """Trace, quantize if a recipe was named, lower and serialise."""
-    if backend != "xnnpack":
-        raise ExportError(
-            f"backend {backend!r} is not available yet; M21 adds Core ML and "
-            "M23 the rest. Only 'xnnpack' works today."
-        )
-    from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
-        XnnpackPartitioner,
-    )
     from executorch.exir import to_edge_transform_and_lower
+
+    if backend == "xnnpack":
+        from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+            XnnpackPartitioner,
+        )
+
+        partitioner = XnnpackPartitioner()
+    elif backend == "coreml":
+        from executorch.backends.apple.coreml.compiler import CoreMLBackend
+        from executorch.backends.apple.coreml.partition import CoreMLPartitioner
+
+        # An artifact is lowered for one delegate, so which backend runs it is
+        # decided here and not on the device. Recording the choice in the
+        # manifest is what lets the parity matrix say which backend a number
+        # came from rather than assuming.
+        partitioner = CoreMLPartitioner(
+            compile_specs=CoreMLBackend.generate_compile_specs()
+        )
+    else:
+        raise ExportError(
+            f"backend {backend!r} is not available; this build lowers for "
+            "'xnnpack' and 'coreml', and M23 adds the rest."
+        )
 
     exported = torch.export.export(model, example)
 
@@ -169,7 +184,7 @@ def _lower(
         exported = torch.export.export(converted, example)
 
     lowered = to_edge_transform_and_lower(
-        exported, partitioner=[XnnpackPartitioner()]
+        exported, partitioner=[partitioner]
     ).to_executorch()
     return bytes(lowered.buffer)
 
