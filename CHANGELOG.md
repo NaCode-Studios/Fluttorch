@@ -9,7 +9,14 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- The publish jobs could not check the repository out. A job-level `permissions`
+  block replaces the default set rather than extending it, so declaring only
+  `id-token: write` left `contents` at none, and on a private repository
+  `actions/checkout` reports that as "repository not found" rather than as a
+  permission error. `v0.4.0` was tagged and released and reached pub.dev through
+  none of it.
 
 ## [0.4.0] - 2026-08-01
 
