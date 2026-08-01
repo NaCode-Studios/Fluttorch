@@ -9,6 +9,48 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
 
 ## [Unreleased]
 
+### Added
+
+- Inference runs off the thread that draws (M28). Every call through the FFI seam
+  is synchronous, and the Dart API above it returned futures that never suspended,
+  so in a Flutter app a model ran on the platform thread for as long as it took.
+  `IsolateExecuTorchRuntime` moves the native side onto a worker isolate: the
+  library is opened there, models are created there, and they never leave, because
+  an `ft_model_t` is not safe to touch from two threads and a handle that crossed
+  back would be exactly that. It costs a copy of every tensor each way, which the
+  class says rather than implies.
+- The binding reaches a phone (M26, M27). ExecuTorch and the shim cross-compile
+  for `arm64-v8a` and for `arm64-apple-ios`, and `fluttorch_executorch_flutter`
+  puts the result inside an app: `jniLibs` on Android, a vendored static archive
+  force-loaded into the binary on iOS, where an app cannot load a dylib from its
+  bundle. A model quantized to `int8-dynamic` runs on Android arm64 and produces
+  drift identical to macOS in every digit reported.
+- Three engines behind one seam (M26, M27). `fluttorch_onnx` and
+  `fluttorch_litert` implement the same C ABI `fluttorch_executorch` implements,
+  so the manifest, the goldens and the parity gate are unchanged and what a second
+  and a third runtime change is the engine. Both run a model exported by this
+  toolchain and hold their goldens against references byte-identical to the ones
+  every ExecuTorch export is measured against.
+- The manifest records which engine executes an artifact, and refuses to be
+  loaded by another one. A `.pte`, a `.onnx` and a `.tflite` are not
+  interchangeable, and the weight hash cannot tell them apart because it is
+  computed over whichever was written, so handing one to the wrong runtime got
+  past every check this project had.
+- `tool/prepare_executorch.sh` performs the workarounds an ExecuTorch checkout
+  needs, rather than describing them in a comment that a clean clone does not
+  have: the Core ML protobuf sources, and the `flatc` that has to run on the build
+  machine rather than on the phone.
+
+### Fixed
+
+- `int8-static` exports. It never had: torchao introspected an operator overload
+  torch 2.13 does not expose, before the model was involved, and a test asserted
+  the translated failure so it would break the day the toolchain stopped having
+  the problem. It broke when LiteRT's converter was installed, because
+  `litert-torch` pins torch below 2.13 and `executorch` has no upper bound, so
+  both settled on 2.12. The recipe now exports and its goldens are the source
+  model's.
+
 ## [0.5.0] - 2026-08-01
 
 ### Added
