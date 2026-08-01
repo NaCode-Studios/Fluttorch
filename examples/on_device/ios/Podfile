@@ -1,5 +1,7 @@
 # Uncomment this line to define a global platform for your project
-# platform :ios, '13.0'
+# 17.0 rather than Flutter's default, because that is what ExecuTorch was
+# cross-compiled against. See packages/fluttorch_executorch/tool/build_native.sh.
+platform :ios, '17.0'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'

@@ -262,15 +262,24 @@ add libexecutorch.a                  libexecutorch.a
 add libexecutorch_core.a             libexecutorch_core.a
 # Named differently by the two builds: the Makefile one disambiguates a shared
 # sibling it also produces, and the Xcode one has no sibling to disambiguate.
+# One or the other, never both. Both hold the same module.o, and merging them
+# into a static archive that is then force-loaded defines every symbol in it
+# twice.
 add libextension_module_static.a     extension/module/libextension_module_static.a
-add libextension_module.a            extension/module/libextension_module_static.a
+if [ ${#RUNTIME[@]} -eq 2 ]; then
+  add libextension_module.a          extension/module/libextension_module_static.a
+fi
 add libextension_data_loader.a       extension/data_loader/libextension_data_loader.a
 add libextension_tensor.a            extension/tensor/libextension_tensor.a
 add libextension_flat_tensor.a       extension/flat_tensor/libextension_flat_tensor.a
 add libextension_named_data_map.a    extension/named_data_map/libextension_named_data_map.a
 add libextension_threadpool.a        extension/threadpool/libextension_threadpool.a
 add libportable_kernels.a            kernels/portable/libportable_kernels.a
-add libkernels_util_all_deps.a       kernels/portable/cpu/util/libkernels_util_all_deps.a
+# libkernels_util_all_deps.a is deliberately absent. It is an aggregate whose
+# eighteen objects are all already inside libportable_kernels.a, which a shared
+# link tolerates because the linker picks one. Merging both into a static
+# archive and then force-loading it does not: that is 182 duplicate symbols at
+# the app's link step, which is where an iOS consumer would meet it.
 add libXNNPACK.a                     backends/xnnpack/third-party/XNNPACK/libXNNPACK.a
 add libxnnpack-microkernels-prod.a   backends/xnnpack/third-party/XNNPACK/libxnnpack-microkernels-prod.a
 add libcpuinfo.a                     backends/xnnpack/third-party/cpuinfo/libcpuinfo.a
