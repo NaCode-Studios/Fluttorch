@@ -9,7 +9,20 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
 
 ## [Unreleased]
 
-Nothing yet.
+### Internal
+
+- `release.yaml` publishes `fluttorch`, `fluttorch_gen` and `fluttorch_test` to pub.dev
+  over OIDC, so no token is stored anywhere and the package pages carry the verified
+  publisher line. The two dependants wait for the core version to be servable before
+  they upload, because they declare it as a dependency and pub.dev refuses a package
+  whose dependencies do not resolve. Creating the GitHub Release deliberately does not
+  wait on any of that: it is derived from the tag and the changelog and is true whatever
+  the registry did, and chaining it would mean a re-run after a partial publish fails on
+  the package that already went up.
+- Published archives are recorded as linked artifacts on the organisation, keyed on the
+  digest pub.dev serves them under. Metadata rather than distribution: nobody resolves a
+  dependency from that panel. The step cannot fail the release, because a metadata write
+  that can undo a successful publish is worth less than the metadata.
 
 ## [0.3.0] - 2026-07-31
 

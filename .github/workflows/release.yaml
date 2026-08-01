@@ -15,6 +15,62 @@ jobs:
   verify:
     uses: ./.github/workflows/ci.yaml
 
+  # pub.dev authenticates the upload over OIDC against the repository and tag
+  # pattern configured on each package, so there is no token to hold. That
+  # exchange is also what earns the "published by a verified publisher" line on
+  # the package page, which is why there is no separate provenance attestation
+  # here: for a Dart package the archive is built and uploaded inside this
+  # exchange and never exists as a file to attest.
+  publish-core:
+    needs: verify
+    permissions:
+      id-token: write
+    uses: dart-lang/setup-dart/.github/workflows/publish.yml@v1
+    with:
+      working-directory: packages/fluttorch
+
+  # fluttorch_gen and fluttorch_test both declare fluttorch ^X.Y.Z, and pub.dev
+  # refuses a package whose dependencies do not resolve. Publishing them in the
+  # same run therefore means waiting for the version uploaded a minute ago to be
+  # servable, which the upload response itself says can take up to ten minutes.
+  await-core:
+    needs: publish-core
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for the core version to be resolvable
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          for _ in $(seq 1 60); do
+            if curl -sf "https://pub.dev/api/packages/fluttorch" \
+                 | grep -q "\"version\":\"$VERSION\""; then
+              echo "fluttorch $VERSION is servable"
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::fluttorch $VERSION was not servable within 15 minutes"
+          exit 1
+
+  publish-gen:
+    needs: await-core
+    permissions:
+      id-token: write
+    uses: dart-lang/setup-dart/.github/workflows/publish.yml@v1
+    with:
+      working-directory: packages/fluttorch_gen
+
+  publish-test:
+    needs: await-core
+    permissions:
+      id-token: write
+    uses: dart-lang/setup-dart/.github/workflows/publish.yml@v1
+    with:
+      working-directory: packages/fluttorch_test
+
+  # Deliberately not downstream of the publish jobs. The Release object is
+  # derived from the tag and the changelog and is true whatever pub.dev did, and
+  # chaining it would mean a re-run after a partial publish fails on the package
+  # that already went up, taking the record with it.
   release:
     needs: verify
     runs-on: ubuntu-latest
@@ -48,3 +104,47 @@ jobs:
           # the drift this arrangement exists to prevent.
           [ -s notes.md ] || { echo "::error::no CHANGELOG.md section for $VERSION"; exit 1; }
           gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md
+
+  # Metadata, not a second distribution channel: nobody resolves a dependency
+  # from the Packages panel. It says what this repository built and which
+  # registry holds it, keyed on the digest pub.dev serves the archive under.
+  #
+  # It cannot fail the release. The endpoint is org-scoped, its write permission
+  # is undocumented, and a metadata step that can undo a successful publish is
+  # worth less than the metadata. If a 404 turns out to be permission rather than
+  # a missing artifact, a PAT with artifact-metadata goes in
+  # ARTIFACT_METADATA_TOKEN and this starts working with no change here.
+  #
+  # The API documents no DELETE, so a record is permanent and a duplicate cannot
+  # be cleaned up: check before writing.
+  link-artifacts:
+    needs: [publish-core, publish-gen, publish-test]
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Record the published archives
+        env:
+          GH_TOKEN: ${{ secrets.ARTIFACT_METADATA_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          for pkg in fluttorch fluttorch_gen fluttorch_test; do
+            meta=$(curl -sf "https://pub.dev/api/packages/$pkg") || {
+              echo "::warning::pub.dev did not answer for $pkg"; continue; }
+            sha=$(echo "$meta" | python3 -c 'import sys,json; print(json.load(sys.stdin)["latest"]["archive_sha256"])')
+            url=$(echo "$meta" | python3 -c 'import sys,json; print(json.load(sys.stdin)["latest"]["archive_url"])')
+            ver=$(echo "$meta" | python3 -c 'import sys,json; print(json.load(sys.stdin)["latest"]["version"])')
+            if gh api "/orgs/${GITHUB_REPOSITORY_OWNER}/artifacts/sha256:$sha/metadata/storage-records" \
+                 --silent 2>/dev/null; then
+              echo "already recorded: $pkg $ver"
+              continue
+            fi
+            gh api -X POST "/orgs/${GITHUB_REPOSITORY_OWNER}/artifacts/metadata/storage-record" \
+              -H "X-GitHub-Api-Version: 2026-03-10" \
+              -f name="$pkg" \
+              -f version="$ver" \
+              -f digest="sha256:$sha" \
+              -f registry_url="https://pub.dev/" \
+              -f artifact_url="$url" \
+              -f status="active" \
+              --silent && echo "recorded $pkg $ver" \
+              || echo "::warning::could not record $pkg $ver"
+          done
