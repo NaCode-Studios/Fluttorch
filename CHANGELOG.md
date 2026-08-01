@@ -97,10 +97,10 @@ wrong.
   not look says which of the two was missing. A layer the backend did not tap is treated
   as a hole rather than as agreement, so nothing after it is ruled out unless the
   divergence was already found before it.
-- A recorded decision on the runtime (M19), in
-  [`docs/runtime-decision.md`](docs/runtime-decision.md). The four hooks M1 found missing
-  are proposed to `executorch_flutter` first, and the fork starts on schedule if they are
-  not merged by the time Tier 5 would begin.
+- A recorded decision on the runtime (M19), on the
+  [board](https://github.com/orgs/NaCode-Studios/projects/6). The four hooks M1 found
+  missing are proposed to `executorch_flutter` first, and the fork starts on schedule if
+  they are not merged by the time Tier 5 would begin.
 
 ### Fixed
 
