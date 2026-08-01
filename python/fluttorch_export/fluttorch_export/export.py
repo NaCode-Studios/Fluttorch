@@ -168,10 +168,9 @@ def _mps_partitioner() -> Any:
     from executorch.backends.apple.mps.partition.mps_partitioner import MPSPartitioner
     from executorch.exir.backend.compile_spec_schema import CompileSpec
 
-    # Float32, for the reason Core ML is pinned to it: the manifest has no field
-    # that records a precision, so an artifact lowered at half answers to a bound
-    # it cannot hold. See the note on the Core ML branch.
-    return MPSPartitioner(compile_specs=[CompileSpec("use_fp16", bytes([False]))])
+    # Half precision, which is what an MPS deployment runs and what the manifest
+    # now records. See the note on the Core ML branch.
+    return MPSPartitioner(compile_specs=[CompileSpec("use_fp16", bytes([True]))])
 
 
 def _metal_partitioner() -> Any:
@@ -199,6 +198,18 @@ def _qnn_partitioner() -> Any:
     from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 
     return QnnPartitioner()
+
+
+#: Backends that do arithmetic in half precision, and what they do it in.
+#:
+#: Absent means float32, which is what the manifest says by saying nothing. Both
+#: entries here are the delegate's own default rather than a choice this exporter
+#: makes: half precision is the point of shipping to an Apple GPU, and the export
+#: records it instead of overriding it.
+_PRECISIONS: dict[str, str] = {
+    "coreml": "float16",
+    "mps": "float16",
+}
 
 
 _PARTITIONERS: dict[str, Any] = {
@@ -265,7 +276,7 @@ def _lower(
     backend: str,
     recipe: Recipe | None = None,
     calibration: Sequence[tuple[torch.Tensor, ...]] = (),
-) -> tuple[bytes, dict[str, int]]:
+) -> tuple[bytes, dict[str, int], str | None]:
     """Trace, quantize if a recipe was named, lower and serialise.
 
     Returns the artifact and, for each submodule the lowered graph still executes
@@ -300,16 +311,14 @@ def _lower(
         # manifest is what lets the parity matrix say which backend a number
         # came from rather than assuming.
         #
-        # Float32 is pinned rather than accepted. Core ML converts to float16 by
-        # default, and the manifest has no field that records it, so an artifact
-        # lowered on that default answers to a full-precision bound it cannot
-        # hold: on this two-layer model that reads as drift up to 9.7e-2 against
-        # references the source model produced. Until the manifest can describe
-        # the precision, the export stays at the one the manifest already claims
-        # by saying nothing.
+        # Float16 is Core ML's own default and is what a deployment would run, so
+        # it is what the export produces. The manifest records it, which is the
+        # part that used to be missing: an artifact lowered at half precision
+        # answering to a full-precision bound failed a gate while doing exactly
+        # what it was told.
         partitioner = CoreMLPartitioner(
             compile_specs=CoreMLBackend.generate_compile_specs(
-                compute_precision=ct.precision.FLOAT32,
+                compute_precision=ct.precision.FLOAT16,
             )
         )
     elif backend in _PARTITIONERS:
@@ -355,7 +364,7 @@ def _lower(
             raise
         raise ExportError(_missing_toolchain(backend, e)) from e
 
-    return bytes(lowered.buffer), _handles_by_module(lowered)
+    return bytes(lowered.buffer), _handles_by_module(lowered), _PRECISIONS.get(backend)
 
 
 def _missing_toolchain(backend: str, error: Exception) -> str:
@@ -465,7 +474,9 @@ def export_model(
     if recipe is not None:
         check_calibration(recipe, cases_in)
 
-    buffer, graph_handles = _lower(model, example, backend, recipe=recipe, calibration=cases_in)
+    buffer, graph_handles, precision = _lower(
+        model, example, backend, recipe=recipe, calibration=cases_in
+    )
 
     out_dir = pathlib.Path(out_dir)
     golden_dir = out_dir / "goldens"
@@ -493,6 +504,7 @@ def export_model(
         inputs=inputs,
         outputs=outputs,
         quantization=quantization,
+        precision=precision,
         preprocessing=tuple(preprocessing),
         labels=tuple(labels) if labels is not None else None,
         goldens=cases,

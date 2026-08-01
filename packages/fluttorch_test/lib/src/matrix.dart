@@ -119,6 +119,7 @@ final class ParityMatrix {
       if (row.isEmpty) continue;
       b.writeln(
         '  $backend: ${row.first.quantization ?? "no quantization"}, '
+        '${row.first.precision ?? "float32"}, '
         'measured against ${row.first.tensors.first.tolerance}',
       );
     }

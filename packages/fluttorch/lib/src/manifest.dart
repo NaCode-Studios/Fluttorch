@@ -15,6 +15,7 @@ final class ModelManifest {
     required this.outputs,
     required this.weightHash,
     this.quantization,
+    this.precision,
     this.preprocessing = const [],
     this.labels,
     this.goldens = const [],
@@ -70,6 +71,19 @@ final class ModelManifest {
   /// numbers moved, and earliest is only defined against a declared sequence.
   /// Empty is the ordinary case, and it costs exactly one thing: a failing gate
   /// can name the output that was wrong but not the layer that made it wrong.
+  /// Compute precision the delegate was lowered at, when it is not float32.
+  ///
+  /// Separate from [quantization] because they are separate decisions that
+  /// compound. A recipe says how the weights were stored; this says what the
+  /// delegate does arithmetic in, and a backend can halve the second while
+  /// leaving the first alone. Core ML and MPS both do that by default.
+  ///
+  /// Null means float32, which is what a reader without this field assumed
+  /// anyway. What it fixes is the case where that absence was untrue: an
+  /// artifact lowered at float16 answered to a full-precision bound it could not
+  /// hold, and the gate failed a model that was doing what it was told.
+  final String? precision;
+
   final List<TensorSpec> activations;
 
   /// Where each tap lives in the lowered graph, positional with [activations].

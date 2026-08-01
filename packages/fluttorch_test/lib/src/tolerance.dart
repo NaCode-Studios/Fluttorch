@@ -75,7 +75,66 @@ final class Tolerance {
   ///
   /// Null for an unknown recipe is deliberate: inventing a default for a scheme
   /// this build has never seen would put a number on a gate that nobody chose.
-  static Tolerance? startingPointFor(String? recipe) => switch (recipe) {
+  /// A starting point for [recipe] at [precision], or null when either is
+  /// unrecognised.
+  ///
+  /// The two compound and are answered together. A recipe says how the weights
+  /// were stored and a precision says what the delegate does arithmetic in, so
+  /// an int8 model on a half-precision GPU is wrong in both ways at once. What
+  /// comes back is the looser of the two bounds on each term, because a bound
+  /// tight enough for one of them fails a model that is only doing the other.
+  static Tolerance? startingPointFor(String? recipe, {String? precision}) {
+    final fromRecipe = _forRecipe(recipe);
+    if (fromRecipe == null) return null;
+    if (precision == null || precision == 'float32') return fromRecipe;
+
+    final fromPrecision = _forPrecision(precision);
+    if (fromPrecision == null) return null;
+    return Tolerance(
+      maxAbsolute: fromRecipe.maxAbsolute > fromPrecision.maxAbsolute
+          ? fromRecipe.maxAbsolute
+          : fromPrecision.maxAbsolute,
+      maxRelative: fromRecipe.maxRelative > fromPrecision.maxRelative
+          ? fromRecipe.maxRelative
+          : fromPrecision.maxRelative,
+      minCosine: switch ((fromRecipe.minCosine, fromPrecision.minCosine)) {
+        (null, final b) => b,
+        (final a, null) => a,
+        (final a!, final b!) => a < b ? a : b,
+      },
+    );
+  }
+
+  /// What half precision costs on its own, before any recipe.
+  ///
+  /// Float16 carries ten explicit mantissa bits, so its epsilon is about
+  /// `4.9e-4`, and the obvious bound is a small multiple of that. The obvious
+  /// bound is wrong, and the reason is worth writing down.
+  ///
+  /// A gate only sees outputs, but rounding happens on intermediates. Feed this
+  /// project's two-layer model an input of magnitude `1e3` and its intermediates
+  /// sit where float16 spacing is about `0.5`, while one output element lands
+  /// near `9.4`. The absolute error follows the intermediates and the relative
+  /// error is measured against the output, so a case that never leaves float16's
+  /// documented accuracy still shows `1e-2` relative. Nothing is wrong with the
+  /// model or the delegate; the two magnitudes are simply not the same magnitude.
+  ///
+  /// So the starting point is `2e-2`, about forty times epsilon. It stays well
+  /// inside the `5e-2` an int8 recipe is given, which is what keeps the two
+  /// distinguishable, and a float16 export held to the float32 bound still fails
+  /// every case. Like every number here it is a starting point rather than a
+  /// measured threshold, and the model that has to hold it decides the real one.
+  static Tolerance? _forPrecision(String precision) => switch (precision) {
+    'float16' => Tolerance(
+      maxAbsolute: 1e-3,
+      maxRelative: 2e-2,
+      minCosine: 0.9999,
+    ),
+    'float32' => _forRecipe(null),
+    _ => null,
+  };
+
+  static Tolerance? _forRecipe(String? recipe) => switch (recipe) {
     // Full precision. The graph was re-ordered, not re-quantized, so anything
     // beyond accumulated float32 rounding is a real change.
     null => Tolerance(
@@ -110,6 +169,11 @@ final class Tolerance {
 
     _ => null,
   };
+
+  /// Precisions [startingPointFor] recognises, for a diagnostic that can list
+  /// them. Float32 is included even though a manifest writes it as absence,
+  /// because a caller passing it explicitly means the same thing.
+  static const Set<String> knownPrecisions = {'float16', 'float32'};
 
   /// Recipes [startingPointFor] recognises, for a diagnostic that can list them.
   static const Set<String> knownRecipes = {

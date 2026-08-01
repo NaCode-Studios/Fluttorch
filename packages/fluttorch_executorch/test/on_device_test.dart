@@ -255,18 +255,30 @@ void main() {
 
     test('it loads on the backend it was lowered for', () {
       expect(model.backend, 'coreml');
-      // Nothing quantized it, and the manifest saying so is load-bearing: the
-      // exporter pins Core ML to float32 precisely because a manifest that says
-      // nothing is read as full precision, and Core ML's own default is float16.
-      // So the bound this answers to is the one the quantized run above fails.
+      // Nothing quantized it, and it is not full precision either. Core ML does
+      // arithmetic in float16 by default, which is what a deployment runs, and
+      // the manifest recording that is what lets the gate pick a bound the
+      // artifact can actually hold.
       expect(model.manifest.quantization, isNull);
+      expect(model.manifest.precision, 'float16');
     });
 
-    test('every golden holds at the full-precision bound', () async {
-      // No tolerance is passed: with no recipe in the manifest the gate falls
-      // back to the full-precision starting point on its own, which is the
-      // bound worth holding a delegate to that only re-ordered the graph.
+    test('every golden holds at the bound its precision implies', () async {
+      // No tolerance is passed. The manifest says float16 and the gate sizes
+      // the bound from that on its own, which is the whole of #53.
       await expectParity(model, goldens: goldens);
+    });
+
+    test('held to the float32 bound, the same run fails', () async {
+      // The half that makes the first one mean something. If a float16 artifact
+      // passed at the float32 bound too, recording the precision would have
+      // bought nothing and the bound would be decorative.
+      final reports = await measureParity(
+        model,
+        goldens: goldens,
+        tolerance: Tolerance.startingPointFor(null),
+      );
+      expect(reports.every((r) => !r.passes), isTrue);
     });
 
     test('the delegate answered, and every case was measured', () async {
@@ -428,9 +440,11 @@ void main() {
       expect(model.backend, 'mps');
     });
 
-    test('every golden holds at the full-precision bound', () async {
-      // Pinned to float32 at export for the reason Core ML is, so the bound the
-      // gate picks on its own is the one this artifact can answer to.
+    test('every golden holds at the bound its precision implies', () async {
+      // Half precision, like Core ML and for the same reason: it is what an MPS
+      // deployment runs, and the manifest says so rather than leaving the gate
+      // to assume float32.
+      expect(model.manifest.precision, 'float16');
       await expectParity(model, goldens: goldens);
     });
 

@@ -153,4 +153,48 @@ void main() {
       'Tolerance(atol 0.01, rtol 0.1, cos ≥ 0.998)',
     );
   });
+
+  group('M23 · a precision the delegate lowered at', () {
+    test('float32 and absence mean the same thing', () {
+      expect(
+        Tolerance.startingPointFor(null, precision: 'float32')!.maxRelative,
+        Tolerance.startingPointFor(null)!.maxRelative,
+      );
+    });
+
+    test('float16 is looser than full precision and tighter than int8', () {
+      final half = Tolerance.startingPointFor(null, precision: 'float16')!;
+      final full = Tolerance.startingPointFor(null)!;
+      final int8 = Tolerance.startingPointFor('int8-dynamic')!;
+
+      expect(half.maxRelative, greaterThan(full.maxRelative));
+      // The two have to stay distinguishable. A half-precision bound as wide as
+      // an int8 one would mean the manifest recording the difference bought
+      // nothing.
+      expect(half.maxRelative, lessThan(int8.maxRelative));
+    });
+
+    test('a recipe and a precision compound rather than replace', () {
+      // int8 on a half-precision GPU is wrong in both ways at once, and the
+      // bound has to be at least as wide as either alone.
+      final both = Tolerance.startingPointFor(
+        'int8-dynamic',
+        precision: 'float16',
+      )!;
+      final int8 = Tolerance.startingPointFor('int8-dynamic')!;
+      final half = Tolerance.startingPointFor(null, precision: 'float16')!;
+
+      expect(both.maxAbsolute, greaterThanOrEqualTo(int8.maxAbsolute));
+      expect(both.maxAbsolute, greaterThanOrEqualTo(half.maxAbsolute));
+      expect(both.maxRelative, greaterThanOrEqualTo(int8.maxRelative));
+      expect(both.minCosine, lessThanOrEqualTo(int8.minCosine!));
+    });
+
+    test('a precision nobody measured a bound for returns null', () {
+      // Same rule as an unknown recipe: inventing a number for a scheme this
+      // build has never seen would put it on a gate nobody chose.
+      expect(Tolerance.startingPointFor(null, precision: 'float8'), isNull);
+      expect(Tolerance.startingPointFor(null, precision: 'bfloat16'), isNull);
+    });
+  });
 }

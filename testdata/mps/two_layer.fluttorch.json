@@ -1,7 +1,8 @@
 {
   "schema_version": 1,
   "name": "two_layer",
-  "weight_hash": "sha256:3f07fd1015ed2540e1ad6712d898c8b6eb8afc3dca8433d69b2ab6dc4f5579e8",
+  "weight_hash": "sha256:68d1369b65c73de1bf1937d5000f23f0a8eaf190bc60888426dce08a513acfd1",
+  "precision": "float16",
   "inputs": [
     {
       "name": "features",

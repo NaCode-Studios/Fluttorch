@@ -385,6 +385,41 @@ class TestTaps:
         assert len(set(handles)) == 3
         assert list(handles) == sorted(handles)
 
+    def test_a_half_precision_backend_records_that_it_is(self, tmp_path) -> None:
+        # The manifest saying nothing used to mean float32, and Core ML lowering
+        # at float16 made that untrue: the artifact answered to a bound it could
+        # not hold and the gate failed a model doing what it was told.
+        if "coreml" not in available_backends():
+            pytest.skip("this machine cannot lower for Core ML")
+
+        result = export_model(
+            model=sample_model.build(),
+            example_inputs=sample_model.example_inputs(),
+            out_dir=tmp_path / "half",
+            name="two_layer",
+            backend="coreml",
+            golden_inputs=sample_model.golden_cases(),
+        )
+
+        assert result.manifest.precision == "float16"
+        assert result.manifest.quantization is None
+        assert result.manifest.to_dict()["precision"] == "float16"
+
+    def test_a_full_precision_backend_says_nothing_about_precision(self, tmp_path) -> None:
+        # Absence is how float32 is written, so a manifest from before the field
+        # existed keeps meaning what it always meant.
+        result = export_model(
+            model=sample_model.build(),
+            example_inputs=sample_model.example_inputs(),
+            out_dir=tmp_path / "full",
+            name="two_layer",
+            backend="xnnpack",
+            golden_inputs=sample_model.golden_cases(),
+        )
+
+        assert result.manifest.precision is None
+        assert "precision" not in result.manifest.to_dict()
+
     def test_a_delegated_export_refuses_taps_it_could_never_answer(self, tmp_path) -> None:
         # The export side alone would succeed. It is the device side that cannot,
         # and a bundle promising attribution nobody can deliver is worse than one

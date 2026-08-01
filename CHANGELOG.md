@@ -45,12 +45,22 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
   containing them. `tool/build_native.sh` links Core ML where the checkout can supply it,
   says which of the two it did, and records the four upstream frictions so the next
   person does not rediscover them one build at a time.
-- Core ML exports are pinned to float32 (M21). Core ML converts to float16 by default and
-  the manifest has no field that records a precision, so an artifact lowered on that
-  default answers to a full-precision bound it cannot hold: on the two-layer model that
-  is drift of up to `9.7e-2` against references the source model produced. Pinning keeps
-  the manifest true to the artifact it describes. Recording the precision instead, so a
-  float16 export can be gated at a bound that fits it, is on the board.
+- The manifest records the compute precision a delegate was lowered at, and Core ML and
+  MPS ship at the float16 they run by default. The two are one change: a recipe says how
+  the weights were stored and a precision says what the delegate does arithmetic in, and
+  a backend can halve the second while leaving the first alone. Without the field an
+  artifact lowered at half precision answered to a full-precision bound it could not hold,
+  so the gate failed a model doing exactly what it was told. Absence still means float32,
+  which is what a reader without the field assumed anyway.
+- The tolerance table sizes a bound from the precision as well as the recipe, and the two
+  compound rather than replace: an int8 model on a half-precision GPU is wrong in both
+  ways at once. Float16's starting point is `2e-2` relative rather than the small multiple
+  of its `4.9e-4` epsilon that looks right. A gate sees outputs while rounding happens on
+  intermediates, so feeding this project's model an input of magnitude `1e3` puts its
+  intermediates where float16 spacing is about `0.5` while one output element lands near
+  `9.4`, and a case well inside float16's documented accuracy still shows `1e-2` relative.
+  It stays inside the `5e-2` an int8 recipe is given, which keeps the two distinguishable,
+  and a float16 export held to the float32 bound still fails every case.
 - The two backends differ in what they can promise, and the binding says so per backend
   rather than per build. XNNPACK on a single-threaded pool fixes the order of every
   reduction; Core ML chooses between the Neural Engine and the GPU and promises no such

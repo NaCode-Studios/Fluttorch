@@ -36,10 +36,12 @@ absent and a column that agreed look identical once the table is printed, and th
 claims.
 
 On an M-series Mac with Core ML, MPS and XNNPACK linked, that report covers four backends across
-four goldens. Three carry the model at float32 and agree with the source to within `1e-7` relative.
-The fourth carries it at `int8-dynamic` and moves by up to `4e-2`, which is four orders of magnitude
-more and is the point: a matrix whose columns all read the same would mean the quantized artifact
-was not quantized.
+four goldens, and no two columns answer to the same bound. Portable carries the model at float32 and
+agrees with the source to within `1e-7` relative. Core ML and MPS carry it at the float16 they run
+by default and move by up to `1e-2`. XNNPACK carries it at `int8-dynamic` and moves by up to `4e-2`.
+Each is measured against the bound its own manifest implies, from the recipe and the precision
+together, which is the only way the row means anything: a single bound would either excuse the
+quantized column or condemn the exact one.
 
 ## What is not run, and why
 
