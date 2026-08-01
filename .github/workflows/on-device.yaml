@@ -1,0 +1,90 @@
+name: On device
+
+# The parity matrix, run on hardware rather than described.
+#
+# Every other job in this repository proves something about the code. This one
+# proves the claim the project exists to make: that a model exported here
+# produces the same numbers on a real accelerator, and that where it does not,
+# the gate says by how much. Nothing below is checkable on a runner that only
+# has Dart.
+#
+# Not on every pull request, and not because it is optional. Building ExecuTorch
+# is the better part of an hour and several gigabytes, so a gate that shape on
+# every push is one somebody eventually routes around, and a gate people route
+# around is worse than one that runs weekly and is believed. The on-device suite
+# skips by name everywhere else, which is what keeps the fast jobs honest about
+# what they did not cover.
+
+on:
+  schedule:
+    - cron: "0 5 * * 1"
+  workflow_dispatch:
+
+# Pinned, because the cache key is only meaningful against one version and
+# because every upstream friction this repository has hit was version-specific.
+env:
+  EXECUTORCH_REF: v1.3.0
+  EXECUTORCH_DIR: ${{ github.workspace }}/.executorch
+
+jobs:
+  matrix:
+    # Apple silicon, which is what makes Core ML and MPS answerable at all. The
+    # backends this runner cannot carry are reported as not run by the matrix
+    # tool rather than omitted from it.
+    runs-on: macos-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Cache the ExecuTorch build
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.EXECUTORCH_DIR }}
+          # The build script is in the key: it decides which delegates are
+          # linked, so a change to it has to invalidate a tree built without
+          # them.
+          key: executorch-${{ env.EXECUTORCH_REF }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/fluttorch_executorch/tool/build_native.sh') }}
+
+      - name: Build ExecuTorch
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch "$EXECUTORCH_REF" --recurse-submodules \
+            https://github.com/pytorch/executorch.git "$EXECUTORCH_DIR"
+          cmake -B "$EXECUTORCH_DIR/cmake-out" -S "$EXECUTORCH_DIR" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DEXECUTORCH_BUILD_XNNPACK=ON \
+            -DEXECUTORCH_BUILD_MPS=ON \
+            -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+            -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \
+            -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+            -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+            -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON
+          cmake --build "$EXECUTORCH_DIR/cmake-out" -j
+
+      # Core ML is deliberately not in the configure above. Linking its runtime
+      # needs coremltools built and its generated protobuf sources copied into
+      # the checkout, which the header of build_native.sh describes in full. The
+      # matrix reports it as not run here rather than pretending otherwise.
+      - name: Build the binding
+        run: packages/fluttorch_executorch/tool/build_native.sh "$EXECUTORCH_DIR"
+
+      - run: dart pub get
+
+      - name: The on-device suite
+        working-directory: packages/fluttorch_executorch
+        run: dart test
+
+      # The report M24 asks for, printed into the run's log so a reader does not
+      # have to reconstruct it from test names. Non-zero when any cell fails.
+      - name: The parity matrix
+        working-directory: packages/fluttorch_executorch
+        run: dart run tool/parity_matrix.dart

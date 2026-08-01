@@ -28,8 +28,8 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
   implements the ABI against ExecuTorch's `Module`, and `tool/build_native.sh` links it
   against a checkout into a shared library. On this machine a model quantized with
   `int8-dynamic` by our own exporter loads through it on XNNPACK, and all four of its
-  goldens land inside the tolerance the recipe starts from, with a drift between
-  `1.4e-3` and `3.0e-3`. Held to the full-precision bound instead, the same run fails
+  goldens land inside the tolerance the recipe starts from, drifting between `2.4e-3`
+  and `4.1e-2` relative. Held to the full-precision bound instead, the same run fails
   every case, which is what makes the first result mean something.
 - The exporter lowers for Core ML as well as XNNPACK (M21), an artifact says which one it
   was lowered for, and the Core ML runtime now links and executes. A Core ML `.pte` from
@@ -99,6 +99,42 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
   the backend an unpinned load takes is now named in one place. It used to be whichever
   entry stood first in the table, which was harmless at two entries and became a way to
   change what every unpinned load runs by editing a list.
+- One report covers every backend a machine offers (M24). `measureMatrix` replays one set
+  of goldens across several loaded models and returns a table, rows by golden and columns
+  by backend, each cell measured at the tolerance that export's own recipe implies. An
+  int8 export and a float32 one of the same model are not wrong by the same amount, and a
+  single bound would either excuse the second or condemn the first. Entries whose goldens
+  do not line up are refused rather than tabulated, because a matrix over different inputs
+  is a set of unrelated numbers arranged to look like a comparison.
+- `dart run tool/parity_matrix.dart` prints that report and exits non-zero when a cell
+  fails. On this machine it covers four backends across four goldens: three carry the
+  model at float32 and agree with the source to within `1e-7` relative, and the one
+  carrying it at `int8-dynamic` moves by up to `4.1e-2`. A table whose columns all read
+  the same would mean the quantized artifact was not quantized. Backends the build lacks
+  are listed as not run rather than omitted, since an absent column and an agreeing column
+  look identical once a table is printed.
+- Backend claims are checked on hardware, or recorded as not checked (M25). The `Backends`
+  workflow runs the export suite on a Linux runner, where what it verifies is mostly the
+  negative: a machine with no Apple GPU stack says it cannot lower for Core ML, MPS or
+  Metal and names what each would need. The `On device` workflow builds ExecuTorch on an
+  Apple silicon runner and runs the parity matrix there, weekly and on demand rather than
+  on every push, because a gate that takes the better part of an hour on every push is one
+  somebody eventually routes around. `docs/backend-coverage.md` records which half of each
+  backend's claim is verified where, and which are not run at all.
+
+### Fixed
+
+- The goldens under `testdata/quantized/` were not the ones the sample model produces.
+  They carried different inputs, random draws rather than the four cases chosen for what
+  they exercise, and their reference outputs did not match the source model on those
+  inputs either. The bundle was internally consistent, so the gate passed, and it was
+  measuring an artifact against references no current code produces. Regenerated, and the
+  four exports now share byte-identical references, which is what let the matrix compare
+  them at all.
+- The quantized suite's upper bound on drift is relative rather than absolute. It asked
+  for `maxAbsolute < 0.01` across goldens whose outputs range from about `0.1` to about
+  `175`, which is six significant figures out of int8 on the widest case and no constraint
+  at all on the narrowest.
 - `NativeExecuTorchBindings` binds that ABI over `dart:ffi`, and is tested against a
   C library the suite compiles and calls. A Dart fake cannot check struct field
   offsets, arrays of strings or pointer arithmetic over tensor arrays, because a

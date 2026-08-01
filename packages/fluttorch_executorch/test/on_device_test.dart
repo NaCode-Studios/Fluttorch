@@ -40,6 +40,109 @@ void main() {
 
   final bindings = NativeExecuTorchBindings.open(_library.path);
 
+  // M24 · every backend this machine has, measured on one set of goldens.
+  //
+  // Built from what is present rather than from a fixed list, which is the only
+  // way the matrix survives contact with a second machine: the same suite has
+  // four columns here and one on a laptop that never built a delegate.
+  group('M24 · the same goldens across every backend this machine has', () {
+    final candidates = <String, Directory>{
+      'xnnpack': _quantized,
+      'portable': _taps,
+      'coreml': _coreml,
+      'mps': _mps,
+    };
+
+    late ParityMatrix matrix;
+    final loaded = <LoadedModel>[];
+
+    setUpAll(() async {
+      final entries = <MatrixEntry>[];
+      for (final entry in candidates.entries) {
+        if (!entry.value.existsSync()) continue;
+        if (!bindings.backends().contains(entry.key)) continue;
+        final goldens = await DirectoryGoldenBundle.open(
+          '${entry.value.path}/two_layer.fluttorch.json',
+        );
+        final model = await ExecuTorchRuntime(bindings).load(
+          artifact: await File(
+            '${entry.value.path}/two_layer.pte',
+          ).readAsBytes(),
+          manifest: goldens.manifest,
+          backend: entry.key,
+        );
+        loaded.add(model);
+        entries.add(MatrixEntry(model: model, goldens: goldens));
+      }
+      matrix = await measureMatrix(entries);
+    });
+
+    tearDownAll(() async {
+      for (final m in loaded) {
+        await m.dispose();
+      }
+    });
+
+    test('it covers more than one backend, or it is not a matrix', () {
+      expect(matrix.backends.length, greaterThan(1));
+      expect(matrix.goldenIds, hasLength(4));
+      // Every cell measured. A hole reads as agreement in a table, which is the
+      // thing this whole package exists to stop.
+      for (final backend in matrix.backends) {
+        for (final id in matrix.goldenIds) {
+          expect(
+            matrix.at(backend: backend, goldenId: id),
+            isNotNull,
+            reason: '$backend/$id',
+          );
+        }
+      }
+    });
+
+    test('every backend holds the bound its own export implies', () {
+      expect(matrix.passes, isTrue, reason: matrix.describe());
+    });
+
+    test('the quantized column is the one that moved', () {
+      // The matrix earns its place here. Three backends carry the model at full
+      // precision and agree with the source to within float32; one carries it at
+      // int8 and does not. A table where every column read the same would mean
+      // the quantized artifact was not quantized.
+      final exact = matrix.backends.where((b) => b != 'xnnpack');
+      for (final id in matrix.goldenIds) {
+        final quantized = matrix
+            .at(backend: 'xnnpack', goldenId: id)!
+            .tensors
+            .single
+            .maxRelative;
+        for (final backend in exact) {
+          final other = matrix
+              .at(backend: backend, goldenId: id)!
+              .tensors
+              .single
+              .maxRelative;
+          expect(
+            quantized,
+            greaterThan(other),
+            reason: '$id: xnnpack(int8) should move more than $backend',
+          );
+        }
+      }
+    });
+
+    test('the report names every backend and every golden', () {
+      final report = matrix.describe();
+      expect(report, startsWith('PASS'));
+      for (final backend in matrix.backends) {
+        expect(report, contains(backend));
+      }
+      for (final id in matrix.goldenIds) {
+        expect(report, contains(id));
+      }
+      printOnFailure(report);
+    });
+  });
+
   group('M21 · a quantized model on this machine', () {
     late DirectoryGoldenBundle goldens;
     late LoadedModel model;
@@ -74,9 +177,15 @@ void main() {
 
       // Quantization moved the numbers. A gate reporting zero drift on an int8
       // model would be measuring something other than the model.
-      expect(reports.every((r) => r.tensors.single.maxAbsolute > 0), isTrue);
+      expect(reports.every((r) => r.tensors.single.maxRelative > 0), isTrue);
       // And it is small enough to be quantization rather than a broken export.
-      expect(reports.every((r) => r.tensors.single.maxAbsolute < 0.01), isTrue);
+      //
+      // Relative rather than absolute, because absolute is not comparable across
+      // these goldens: one case feeds the model inputs of magnitude 1e3 and its
+      // outputs are around 175, where an absolute bound of 0.01 asks for six
+      // significant figures out of int8. Relative asks the same question of
+      // every case.
+      expect(reports.every((r) => r.tensors.single.maxRelative < 0.05), isTrue);
     });
 
     test('held to a full-precision bound, the same run fails', () async {

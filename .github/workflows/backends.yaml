@@ -1,0 +1,53 @@
+name: Backends
+
+# What a machine without Apple's GPU stack can lower for, checked on one.
+#
+# The export half of every backend claim is verifiable anywhere, and the claim
+# worth checking off this laptop is the negative one: that a Linux runner with
+# no Core ML, no MPS and no Metal says so and names what it would need, rather
+# than failing with an ImportError from three libraries down.
+#
+# Not on every pull request. Installing torch and executorch is gigabytes and
+# minutes, and a gate that slow on every push is one somebody eventually routes
+# around. It runs when the exporter changes, weekly, and on demand.
+
+on:
+  pull_request:
+    paths:
+      - "python/**"
+      - ".github/workflows/backends.yaml"
+  schedule:
+    # Weekly, because what this checks is upstream's toolchain rather than ours:
+    # a backend can stop importing without anything here changing.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Install the export toolchain
+        run: pip install torch executorch pytest
+      - name: What this runner can lower for
+        run: |
+          python - <<'PY'
+          from fluttorch_export.export import BACKENDS, available_backends
+          available = available_backends()
+          print("known    :", ", ".join(BACKENDS))
+          print("available:", ", ".join(available))
+          print("not run  :", ", ".join(b for b in BACKENDS if b not in available))
+          PY
+        env:
+          PYTHONPATH: python/fluttorch_export
+      # The suite adapts to the machine: the backends this runner lacks are the
+      # ones whose refusal it exercises, and the ones it has are lowered for
+      # real. That is the same suite that runs on a Mac and reaches the opposite
+      # half of the table.
+      - name: The export suite, against this runner's toolchain
+        run: python -m pytest python/fluttorch_export/tests -q
+        env:
+          PYTHONPATH: python/fluttorch_export
