@@ -49,13 +49,15 @@ exported with `torch.export` and makes the boundary between Python and Dart type
 workflow that runs the gate on every pull request is in
 [`docs/ci-parity-gate.md`](docs/ci-parity-gate.md).
 
-> **Status — `0.4.0`, early development.** The loop from `torch.export` to a typed Dart API to a
-> parity gate is complete, and an export can be quantized: one command produces an artifact, its
-> manifest and its goldens, the generated bindings make handing the model the wrong tensor a compile
-> error, and `expectParity` replays the goldens and names the earliest layer whose numbers moved.
-> What none of it runs on yet is a device: `fluttorch_executorch` has nothing behind it, so the gate
-> is exercised against replayed goldens rather than against a backend, and that package is not
-> published.
+> **Status — `0.5.0`, early development.** The loop from `torch.export` to a typed Dart API to a
+> parity gate now runs on hardware. Fluttorch has its own `dart:ffi` binding to ExecuTorch, and one
+> report replays the same goldens across every backend a machine offers: on an M-series Mac that is
+> four columns, and none of them answers to the same bound, because the manifest records the recipe
+> and the precision each artifact was lowered with. A drift can be attributed to the layer that
+> caused it, by reading intermediates off the device rather than inferring them.
+> What it does not do yet is reach a phone. The native half is built per machine by
+> `tool/build_native.sh` and there is no iOS or Android packaging, so every number here comes from a
+> laptop and `fluttorch_executorch` stays unpublished.
 > The [board](https://github.com/orgs/NaCode-Studios/projects/6) is the plan of record and tracks it
 > milestone by milestone. Until `1.0`, minor versions may break.
 
@@ -146,13 +148,19 @@ rejects the wrong tensor; and the parity gate, which replays those goldens, fail
 report naming the tensor, the bound it broke and the backend that ran it, and where the export
 captured taps also names the earliest layer whose numbers moved.
 
-**Next.** The runtime. Attribution, the parity matrix and `runInto` all need hooks no published Dart
-binding exposes: activation taps, deterministic execution, backend selection at load, and
-caller-supplied output buffers. Fluttorch writes its own `dart:ffi` binding for them.
+**Shipped (`0.5.0`).** Tiers 5 and 6. Fluttorch's own `dart:ffi` binding to ExecuTorch, carrying the
+four hooks no published binding exposes: a backend pinned at load, execution repeatable enough that a
+tolerance measures the model rather than the hardware, activation taps, and output buffers the caller
+owns. Eight backends the exporter knows and reports honestly on the machine it is asked from, with
+XNNPACK, Core ML and MPS measured rather than described. One parity report across all of them, each
+column answering to the bound its own manifest implies, from the recipe and the precision together.
 
-**Later.** Running the same goldens across every backend a device offers, then LiteRT and ONNX
-Runtime, which is what turns the runtime-agnostic claim into something measured rather than
-stated.
+**Next.** Reaching a phone. The binding is built per machine today, so iOS and Android packaging is
+what stands between this and the thing it was built for, along with running inference off the thread
+that draws the UI.
+
+**Later.** LiteRT and ONNX Runtime, which is what turns the runtime-agnostic claim into something
+measured rather than stated, and a model large enough that the backends can disagree.
 
 The [board](https://github.com/orgs/NaCode-Studios/projects/6) carries the milestone plan and its
 exit criteria, and every tier is a [milestone](https://github.com/NaCode-Studios/Fluttorch/milestones)
