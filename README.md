@@ -146,10 +146,9 @@ rejects the wrong tensor; and the parity gate, which replays those goldens, fail
 report naming the tensor, the bound it broke and the backend that ran it, and where the export
 captured taps also names the earliest layer whose numbers moved.
 
-**Next.** The runtime. Attribution, the parity matrix and `runInto` all need hooks no published
-Dart binding exposes, so the four are proposed upstream first and Fluttorch writes its own
-`dart:ffi` binding if they are not merged by the time that work would start.
-[`docs/runtime-decision.md`](docs/runtime-decision.md) records that decision with the evidence.
+**Next.** The runtime. Attribution, the parity matrix and `runInto` all need hooks no published Dart
+binding exposes: activation taps, deterministic execution, backend selection at load, and
+caller-supplied output buffers. Fluttorch writes its own `dart:ffi` binding for them.
 
 **Later.** Running the same goldens across every backend a device offers, then LiteRT and ONNX
 Runtime, which is what turns the runtime-agnostic claim into something measured rather than

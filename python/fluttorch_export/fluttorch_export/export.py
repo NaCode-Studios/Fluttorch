@@ -136,20 +136,49 @@ def _lower(
     calibration: Sequence[tuple[torch.Tensor, ...]] = (),
 ) -> bytes:
     """Trace, quantize if a recipe was named, lower and serialise."""
-    if backend != "xnnpack":
-        raise ExportError(
-            f"backend {backend!r} is not available yet; M21 adds Core ML and "
-            "M23 the rest. Only 'xnnpack' works today."
-        )
-    from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
-        XnnpackPartitioner,
-    )
     from executorch.exir import to_edge_transform_and_lower
+
+    if backend == "xnnpack":
+        from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+            XnnpackPartitioner,
+        )
+
+        partitioner = XnnpackPartitioner()
+    elif backend == "coreml":
+        import coremltools as ct
+        from executorch.backends.apple.coreml.compiler import CoreMLBackend
+        from executorch.backends.apple.coreml.partition import CoreMLPartitioner
+
+        # An artifact is lowered for one delegate, so which backend runs it is
+        # decided here and not on the device. Recording the choice in the
+        # manifest is what lets the parity matrix say which backend a number
+        # came from rather than assuming.
+        #
+        # Float32 is pinned rather than accepted. Core ML converts to float16 by
+        # default, and the manifest has no field that records it, so an artifact
+        # lowered on that default answers to a full-precision bound it cannot
+        # hold: on this two-layer model that reads as drift up to 9.7e-2 against
+        # references the source model produced. Until the manifest can describe
+        # the precision, the export stays at the one the manifest already claims
+        # by saying nothing.
+        partitioner = CoreMLPartitioner(
+            compile_specs=CoreMLBackend.generate_compile_specs(
+                compute_precision=ct.precision.FLOAT32,
+            )
+        )
+    else:
+        raise ExportError(
+            f"backend {backend!r} is not available; this build lowers for "
+            "'xnnpack' and 'coreml', and M23 adds the rest."
+        )
 
     exported = torch.export.export(model, example)
 
     if recipe is not None:
-        from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+        # torchao rather than torch.ao: the pt2e flow moved out of torch and into
+        # torchao, which executorch depends on and therefore installs. Importing
+        # it lazily keeps the recipe table readable without either.
+        from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
         graph = prepare_pt2e(exported.module(), quantizer_for(recipe))
         # Observers only see what they are run over. A static recipe fixes every
@@ -159,12 +188,36 @@ def _lower(
         with torch.no_grad():
             for case in calibration:
                 graph(*case)
-        exported = torch.export.export(convert_pt2e(graph), example)
+        try:
+            converted = convert_pt2e(graph)
+        except Exception as e:  # noqa: BLE001 - re-raised with the reason below
+            raise ExportError(_convert_failure(recipe, e)) from e
+        exported = torch.export.export(converted, example)
 
-    lowered = to_edge_transform_and_lower(
-        exported, partitioner=[XnnpackPartitioner()]
-    ).to_executorch()
+    lowered = to_edge_transform_and_lower(exported, partitioner=[partitioner]).to_executorch()
     return bytes(lowered.buffer)
+
+
+def _convert_failure(recipe: Recipe, error: Exception) -> str:
+    """Say what a failure inside torchao's conversion actually was.
+
+    The pass manager reports which pass raised and swallows the reason, so the
+    message a caller sees names a pass they have never heard of and nothing they
+    can act on. This puts the cause back and, for the one incompatibility this
+    toolchain is known to hit, says which combination is at fault so nobody
+    spends an afternoon on their model.
+    """
+    cause = str(error.__cause__ or error)
+    if "has no overload name" in cause:
+        return (
+            f"{recipe.name} cannot be converted by the installed toolchain: "
+            f"{cause}. This is torchao introspecting an operator overload that "
+            f"this version of torch does not expose, and it happens before the "
+            f"model is involved. torch {torch.__version__} with the torchao that "
+            "executorch pins hits it on any graph containing a linear layer; "
+            "int8-dynamic and int4-weight-only convert on the same toolchain."
+        )
+    return f"{recipe.name} could not be converted: {cause}"
 
 
 def export_model(

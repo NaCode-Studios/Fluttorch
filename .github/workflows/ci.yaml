@@ -36,6 +36,11 @@ jobs:
         working-directory: packages/fluttorch_test
       - run: dart test
         working-directory: packages/fluttorch_gen
+      # The backend suite compiles a C library and calls it over dart:ffi, which
+      # is the only way to check struct offsets and pointer arithmetic: a wrong
+      # offset returns plausible nonsense rather than failing to compile.
+      - run: dart test
+        working-directory: packages/fluttorch_executorch
       # The generator has to actually run, not merely be unit-tested: the
       # committed output is regenerated and must come back identical, which
       # catches a builder that works only in a test harness.

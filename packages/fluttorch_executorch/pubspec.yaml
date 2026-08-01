@@ -10,8 +10,13 @@ environment:
 resolution: workspace
 
 dependencies:
+  # Utf8 marshalling and a native allocator. dart:ffi has neither, and
+  # hand-rolling them in a package that exists to be trusted about buffers is a
+  # poor trade against a package the Dart team maintains.
+  ffi: ^2.1.0
   fluttorch: ^0.4.0
 
 dev_dependencies:
+  fluttorch_test: ^0.4.0
   lints: ^6.0.0
   test: ^1.25.0

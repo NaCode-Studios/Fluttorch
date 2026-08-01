@@ -9,8 +9,94 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
 
 ## [Unreleased]
 
+### Added
+
+- The seam between Fluttorch and ExecuTorch is declared as a C ABI in
+  `packages/fluttorch_executorch/src/fluttorch_executorch.h` (M20), and mirrored in
+  Dart by `ExecuTorchBindings`. It carries the four hooks no published binding
+  exposes: a backend pinned at load, execution repeatable enough that a tolerance
+  measures the model rather than the noise, activation taps, and output buffers the
+  caller owns.
+- `ExecuTorchRuntime` is implemented on top of that seam. The artifact is verified
+  before anything native sees it; a backend that does not exist is refused with the
+  list; a fallback reports the backend that ran rather than the one requested;
+  determinism fails rather than being quietly dropped; and a tap the graph does not
+  carry stays absent instead of arriving zero-filled, because a zero reads as
+  agreement.
+
+- The native half of the binding exists and runs (M20, M21). `src/fluttorch_executorch.cpp`
+  implements the ABI against ExecuTorch's `Module`, and `tool/build_native.sh` links it
+  against a checkout into a shared library. On this machine a model quantized with
+  `int8-dynamic` by our own exporter loads through it on XNNPACK, and all four of its
+  goldens land inside the tolerance the recipe starts from, with a drift between
+  `1.4e-3` and `3.0e-3`. Held to the full-precision bound instead, the same run fails
+  every case, which is what makes the first result mean something.
+- The exporter lowers for Core ML as well as XNNPACK (M21), an artifact says which one it
+  was lowered for, and the Core ML runtime now links and executes. A Core ML `.pte` from
+  our own exporter loads through this binding on an M-series Mac, and all four of its
+  goldens hold at the full-precision bound, in the same suite as the quantized XNNPACK
+  case. What blocked it was one absent directory. ExecuTorch's
+  `backends/apple/coreml/scripts/install_requirements.sh` runs under `set -e` and invokes
+  `python`, so where only `python3` is on PATH it exits at its pip step, short of the
+  commands that build coremltools' `mlmodel` target and copy the protobuf sources that
+  produces into `runtime/sdk/format/`. Without that directory the delegate's SDK sources
+  are dropped from the CMake target, and `libcoremldelegate.a` references
+  `ETCoreMLModelAnalyzer`, `ETCoreMLModelDebugInfo` and `ModelEventLoggerImpl` without
+  containing them. `tool/build_native.sh` links Core ML where the checkout can supply it,
+  says which of the two it did, and records the four upstream frictions so the next
+  person does not rediscover them one build at a time.
+- Core ML exports are pinned to float32 (M21). Core ML converts to float16 by default and
+  the manifest has no field that records a precision, so an artifact lowered on that
+  default answers to a full-precision bound it cannot hold: on the two-layer model that
+  is drift of up to `9.7e-2` against references the source model produced. Pinning keeps
+  the manifest true to the artifact it describes. Recording the precision instead, so a
+  float16 export can be gated at a bound that fits it, is on the board.
+- The two backends differ in what they can promise, and the binding says so per backend
+  rather than per build. XNNPACK on a single-threaded pool fixes the order of every
+  reduction; Core ML chooses between the Neural Engine and the GPU and promises no such
+  thing, so asking it for deterministic execution is refused rather than granted and
+  hoped for.
+- Activation taps are reported absent by this build rather than answered with nothing
+  captured. Reading intermediates needs an event tracer and an artifact carrying debug
+  handles, and neither is linked yet, so a gate asking for attribution is told it cannot
+  have it instead of receiving a run in which every layer appears to agree.
+- `NativeExecuTorchBindings` binds that ABI over `dart:ffi`, and is tested against a
+  C library the suite compiles and calls. A Dart fake cannot check struct field
+  offsets, arrays of strings or pointer arithmetic over tensor arrays, because a
+  wrong offset there returns plausible nonsense instead of failing to compile. It
+  earned its keep immediately: the first run found a pointer kept past the call
+  that owned it, which read freed memory and returned a backend name that looked
+  like text.
+
+- M22, migrating off the interim dependency, is closed as not planned rather than
+  built. `fluttorch_executorch` was never published and its runtime always threw, and
+  `executorch_flutter` was only ever used directly by the M2 spike, which is an
+  example rather than an API anyone depends on. A deprecation window guards a promise
+  that was never made. The argument is on the board so the milestone is not
+  re-argued.
+
+### Changed
+
+- The quantized lowering imports `convert_pt2e` from `torchao` rather than from
+  `torch.ao`, where the pt2e flow no longer lives. Written against the old path, it
+  had never been executed: neither the development machine nor CI carried torch, so
+  M17 shipped in `0.4.0` with its exit criterion claimed rather than earned.
+- `FluttorchRuntime.load` takes `deterministic`. It belongs on the seam rather than
+  on one backend, since it is the difference between a tolerance that measures a
+  model and one that measures run-to-run noise.
+
 ### Fixed
 
+- `int8-dynamic` and `int4-weight-only` export, which is now asserted by running
+  them rather than by describing them. `int8-static` does not: `torchao` introspects
+  an operator overload that torch 2.13 does not expose, before the model is
+  involved, and the failure surfaced as the name of a pass nobody has heard of. The
+  exporter now says which toolchain combination is at fault and which recipes work
+  on it, and a test pins that message so the day it is fixed upstream, the test
+  fails and this entry goes.
+- Tap capture is asserted against a real export: the activations are declared in
+  graph order with shapes observed by running the model, every case records a key
+  for each, and the files written are the length the spec declares.
 - The linked artifact records are no longer skipped when the attestation fails, and
   they name the repository when the endpoint cannot work it out. It resolves which
   repository built an artifact from the artifact's attestation, so an archive without
@@ -21,12 +107,6 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
   Python section at all, so they returned every time anyone ran the suite. They stay
   in the history, which rewriting would cost every tag and every published release to
   remove; what stops is adding more.
-- The publish jobs are written out rather than calling
-  `dart-lang/setup-dart/.github/workflows/publish.yml`. That workflow declares
-  `permissions: id-token: write` on its own job, and a permissions block in a
-  called workflow narrows the set again, so whatever the caller grants, its
-  checkout runs without `contents` and a private repository answers "repository
-  not found". It works on public packages and cannot work here.
 
 ## [0.4.0] - 2026-08-01
 
@@ -53,13 +133,19 @@ wrong.
   not look says which of the two was missing. A layer the backend did not tap is treated
   as a hole rather than as agreement, so nothing after it is ruled out unless the
   divergence was already found before it.
-- A recorded decision on the runtime (M19), in
-  [`docs/runtime-decision.md`](docs/runtime-decision.md). The four hooks M1 found missing
-  are proposed to `executorch_flutter` first, and the fork starts on schedule if they are
-  not merged by the time Tier 5 would begin.
+- A recorded decision on the runtime (M19), on the
+  [board](https://github.com/orgs/NaCode-Studios/projects/6). The four hooks M1 found
+  missing are proposed to `executorch_flutter` first, and the fork starts on schedule if
+  they are not merged by the time Tier 5 would begin.
 
 ### Fixed
 
+- The publish jobs are written out rather than calling
+  `dart-lang/setup-dart/.github/workflows/publish.yml`. That workflow declares
+  `permissions: id-token: write` on its own job, and a permissions block in a
+  called workflow narrows the set again, so whatever the caller grants, its
+  checkout runs without `contents` and a private repository answers "repository
+  not found". It works on public packages and cannot work here.
 - The publish jobs could not check the repository out. A job-level `permissions`
   block replaces the default set rather than extending it, so declaring only
   `id-token: write` left `contents` at none, and on a private repository
