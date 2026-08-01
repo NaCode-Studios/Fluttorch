@@ -22,6 +22,11 @@ jobs:
   publish-core:
     needs: verify
     permissions:
+      # Spelled out because a job-level permissions block replaces the default
+      # set rather than extending it. Without it contents is none, and the
+      # checkout inside the reusable workflow reports this private repository as
+      # not found, which is a 403 wearing a 404.
+      contents: read
       id-token: write
     uses: dart-lang/setup-dart/.github/workflows/publish.yml@v1
     with:
@@ -52,6 +57,11 @@ jobs:
   publish-gen:
     needs: await-core
     permissions:
+      # Spelled out because a job-level permissions block replaces the default
+      # set rather than extending it. Without it contents is none, and the
+      # checkout inside the reusable workflow reports this private repository as
+      # not found, which is a 403 wearing a 404.
+      contents: read
       id-token: write
     uses: dart-lang/setup-dart/.github/workflows/publish.yml@v1
     with:
@@ -60,6 +70,11 @@ jobs:
   publish-test:
     needs: await-core
     permissions:
+      # Spelled out because a job-level permissions block replaces the default
+      # set rather than extending it. Without it contents is none, and the
+      # checkout inside the reusable workflow reports this private repository as
+      # not found, which is a 403 wearing a 404.
+      contents: read
       id-token: write
     uses: dart-lang/setup-dart/.github/workflows/publish.yml@v1
     with:
@@ -123,6 +138,7 @@ jobs:
     needs: [publish-core, publish-gen, publish-test]
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       id-token: write
       attestations: write
     steps:
