@@ -9,14 +9,7 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
 
 ## [Unreleased]
 
-### Fixed
-
-- The publish jobs could not check the repository out. A job-level `permissions`
-  block replaces the default set rather than extending it, so declaring only
-  `id-token: write` left `contents` at none, and on a private repository
-  `actions/checkout` reports that as "repository not found" rather than as a
-  permission error. `v0.4.0` was tagged and released and reached pub.dev through
-  none of it.
+Nothing yet.
 
 ## [0.4.0] - 2026-08-01
 
@@ -47,6 +40,15 @@ wrong.
   [`docs/runtime-decision.md`](docs/runtime-decision.md). The four hooks M1 found missing
   are proposed to `executorch_flutter` first, and the fork starts on schedule if they are
   not merged by the time Tier 5 would begin.
+
+### Fixed
+
+- The publish jobs could not check the repository out. A job-level `permissions`
+  block replaces the default set rather than extending it, so declaring only
+  `id-token: write` left `contents` at none, and on a private repository
+  `actions/checkout` reports that as "repository not found" rather than as a
+  permission error. It surfaced on the first tag that tried to publish, which is
+  the first tag that could have surfaced it.
 
 ### Internal
 
