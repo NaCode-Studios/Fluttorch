@@ -1,0 +1,62 @@
+// Packages the shared object into the APK and does nothing else.
+//
+// There is no native compilation here on purpose. ExecuTorch takes the better
+// part of an hour to build and needs a configure this file has no business
+// restating, so the binding is cross-compiled by
+// packages/fluttorch_executorch/tool/build_native.sh and written into jniLibs.
+// A Gradle task that shelled out to that script would make every app build
+// depend on a checkout of ExecuTorch that most app builds do not have.
+group = "it.nacodestudios.fluttorch_executorch"
+version = "1.0"
+
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath("com.android.tools.build:gradle:8.7.3")
+    }
+}
+
+rootProject.allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+apply plugin: "com.android.library"
+
+android {
+    namespace = "it.nacodestudios.fluttorch_executorch"
+    compileSdk = 35
+
+    defaultConfig {
+        minSdk = 26
+        // The one the binding is built for. An APK carrying a library for an ABI
+        // the device does not have installs and then fails at dlopen, which is
+        // the failure this line exists to prevent.
+        ndk {
+            abiFilters "arm64-v8a"
+        }
+    }
+
+    sourceSets {
+        main.jniLibs.srcDirs = ["src/main/jniLibs"]
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    // Kotlin defaults to whichever JVM its own toolchain picked, which here is
+    // 21 against Java's 17, and Gradle refuses the pair. Pinned rather than
+    // raised: 17 is what the Android Gradle plugin and the Flutter templates
+    // agree on, so following Kotlin upward would move the disagreement rather
+    // than settle it.
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_17.toString()
+    }
+}

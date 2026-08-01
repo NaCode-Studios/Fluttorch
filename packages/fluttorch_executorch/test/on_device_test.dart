@@ -6,7 +6,6 @@ import 'dart:isolate';
 
 import 'package:fluttorch/fluttorch.dart';
 import 'package:fluttorch_executorch/fluttorch_executorch.dart';
-import 'package:fluttorch_executorch/src/ffi.dart';
 import 'package:fluttorch_test/fluttorch_test.dart';
 import 'package:fluttorch_test/io.dart';
 import 'package:test/test.dart';

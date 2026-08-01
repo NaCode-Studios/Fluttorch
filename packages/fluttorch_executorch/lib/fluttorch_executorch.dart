@@ -13,5 +13,9 @@
 library;
 
 export 'src/bindings.dart';
+// The implementation over a real library, which every consumer needs and none
+// could reach: it lived under src/ and the suites here imported it by path,
+// which is a thing a test in this repository can do and an application cannot.
+export 'src/ffi.dart' show FtStatus, NativeExecuTorchBindings;
 export 'src/isolate_runtime.dart';
 export 'src/runtime.dart';

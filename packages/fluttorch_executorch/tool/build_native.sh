@@ -96,7 +96,12 @@ if [ "$TARGET" = android ]; then
   # --no-undefined because a shared object on Android links happily with symbols
   # it cannot resolve and fails at dlopen instead, on the device, in front of a
   # user. -llog is what ExecuTorch's platform layer logs through.
-  SHARED=(-shared -fPIC -Wl,--no-undefined -llog)
+  #
+  # -static-libstdc++ puts the C++ runtime inside this library. The NDK's default
+  # is the shared one, which then has to be in the APK beside us, and an app that
+  # has no other native code has no reason to carry it: without it dlopen fails
+  # looking for libc++_shared.so, which reads as our library being missing.
+  SHARED=(-shared -fPIC -Wl,--no-undefined -static-libstdc++ -llog)
 elif [ "$(uname -s)" = Darwin ]; then
   LIB=libfluttorch_executorch.dylib
   SHARED=(-dynamiclib -framework Accelerate -framework Foundation)
@@ -105,7 +110,16 @@ else
   SHARED=(-shared -fPIC)
 fi
 
-mkdir -p "$HERE/.dart_tool/native"
+# Where the library has to land for the target to find it. The host build feeds
+# the integration test, which loads it by path. The Android build feeds an APK,
+# and Gradle packages jniLibs only for a plugin, which is what
+# fluttorch_executorch_flutter is for.
+if [ "$TARGET" = android ]; then
+  DEST="$HERE/../fluttorch_executorch_flutter/android/src/main/jniLibs/arm64-v8a"
+else
+  DEST="$HERE/.dart_tool/native"
+fi
+mkdir -p "$DEST"
 
 # Whether this checkout can supply Core ML, asked of the archive rather than of
 # the cache. A build configured without devtools produces a libcoremldelegate.a
@@ -186,7 +200,7 @@ link_backend QNN "$OUT/backends/qualcomm/libqnn_executorch_backend.a" -DFLUTTORC
 
 # The parent of the checkout, because ExecuTorch's own headers include each other
 # as executorch/... and the checkout directory is that "executorch".
-"$CXX_BIN" -std=c++17 -O2 -fPIC -c "$HERE/src/fluttorch_executorch.cpp" -o "$HERE/.dart_tool/native/shim.o" \
+"$CXX_BIN" -std=c++17 -O2 -fPIC -c "$HERE/src/fluttorch_executorch.cpp" -o "$DEST/shim.o" \
   -I "$HERE/src" -I "$(dirname "$ET")" -I "$ET/runtime/core/portable_type/c10" \
   "${DEFINES[@]}"
 
@@ -203,7 +217,7 @@ OPS=("${FORCE[@]}")
 FLATCC=()
 [ "$TARGET" = host ] && FLATCC=("$OUT/third-party/flatcc_ep/lib/libflatccrt.a")
 
-"$CXX_BIN" -std=c++17 "${SHARED[@]}" -o "$HERE/.dart_tool/native/$LIB" "$HERE/.dart_tool/native/shim.o" \
+"$CXX_BIN" -std=c++17 "${SHARED[@]}" -o "$DEST/$LIB" "$DEST/shim.o" \
   "${BACKENDS[@]}" \
   "${OPS[@]}" \
   "$OUT/libexecutorch.a" "$OUT/libexecutorch_core.a" \
@@ -221,5 +235,5 @@ FLATCC=()
   "$OUT/backends/xnnpack/third-party/pthreadpool/libpthreadpool.a" \
   "$OUT/kleidiai/libkleidiai.a" ${FLATCC[@]+"${FLATCC[@]}"}
 
-rm -f "$HERE/.dart_tool/native/shim.o"
-echo "built $HERE/.dart_tool/native/$LIB ($TARGET)"
+rm -f "$DEST/shim.o"
+echo "built $DEST/$LIB ($TARGET)"

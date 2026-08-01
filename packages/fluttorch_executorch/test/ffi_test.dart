@@ -6,7 +6,6 @@ import 'dart:typed_data';
 
 import 'package:fluttorch/fluttorch.dart';
 import 'package:fluttorch_executorch/fluttorch_executorch.dart';
-import 'package:fluttorch_executorch/src/ffi.dart';
 import 'package:test/test.dart';
 
 /// The binding against a real shared library, compiled here.
