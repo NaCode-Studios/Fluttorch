@@ -9,6 +9,7 @@ workspace:
   - packages/fluttorch
   - packages/fluttorch_executorch
   - packages/fluttorch_gen
+  - packages/fluttorch_onnx
   - packages/fluttorch_test
 
 dev_dependencies:
