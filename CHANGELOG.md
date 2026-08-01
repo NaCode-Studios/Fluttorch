@@ -24,6 +24,17 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
   carry stays absent instead of arriving zero-filled, because a zero reads as
   agreement.
 
+- The native half of the binding exists and runs (M20, M21). `src/fluttorch_executorch.cpp`
+  implements the ABI against ExecuTorch's `Module`, and `tool/build_native.sh` links it
+  against a checkout into a shared library. On this machine a model quantized with
+  `int8-dynamic` by our own exporter loads through it on XNNPACK, and all four of its
+  goldens land inside the tolerance the recipe starts from, with a drift between
+  `1.4e-3` and `3.0e-3`. Held to the full-precision bound instead, the same run fails
+  every case, which is what makes the first result mean something.
+- Activation taps are reported absent by this build rather than answered with nothing
+  captured. Reading intermediates needs an event tracer and an artifact carrying debug
+  handles, and neither is linked yet, so a gate asking for attribution is told it cannot
+  have it instead of receiving a run in which every layer appears to agree.
 - `NativeExecuTorchBindings` binds that ABI over `dart:ffi`, and is tested against a
   C library the suite compiles and calls. A Dart fake cannot check struct field
   offsets, arrays of strings or pointer arithmetic over tensor arrays, because a
