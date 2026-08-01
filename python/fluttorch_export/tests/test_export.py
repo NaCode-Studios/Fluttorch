@@ -246,6 +246,80 @@ class TestBackends:
             assert result.golden_count == len(sample_model.golden_cases()), backend
 
 
+class TestRuntimes:
+    """M27 · an artifact says which engine executes it."""
+
+    def test_an_onnx_export_says_so_and_writes_a_onnx(self, tmp_path) -> None:
+        pytest.importorskip("onnxscript", reason="the ONNX export needs onnxscript")
+        result = export_model(
+            model=sample_model.build(),
+            example_inputs=sample_model.example_inputs(),
+            out_dir=tmp_path / "onnx",
+            name="two_layer",
+            runtime="onnx",
+            golden_inputs=sample_model.golden_cases(),
+            input_names=["features"],
+            output_names=["score"],
+        )
+
+        assert result.artifact.suffix == ".onnx"
+        assert result.manifest.runtime == "onnx"
+        assert result.manifest.to_dict()["runtime"] == "onnx"
+        assert result.golden_count == len(sample_model.golden_cases())
+
+    def test_an_executorch_export_says_nothing_about_its_runtime(self, tmp_path) -> None:
+        # Absence is how ExecuTorch is written, so a manifest from before the
+        # field keeps meaning what it meant.
+        result = export_model(
+            model=sample_model.build(),
+            example_inputs=sample_model.example_inputs(),
+            out_dir=tmp_path / "et",
+            name="two_layer",
+            golden_inputs=sample_model.golden_cases(),
+        )
+
+        assert result.artifact.suffix == ".pte"
+        assert result.manifest.runtime is None
+        assert "runtime" not in result.manifest.to_dict()
+
+    def test_onnx_refuses_a_recipe_that_describes_another_runtime(self, tmp_path) -> None:
+        # The recipes are built on ExecuTorch's XNNPACK quantizer, so naming one
+        # for an ONNX export would put a word in the manifest that describes a
+        # lowering nobody performed.
+        with pytest.raises(ExportError, match="XNNPACK"):
+            export_model(
+                model=sample_model.build(),
+                example_inputs=sample_model.example_inputs(),
+                out_dir=tmp_path / "q",
+                name="two_layer",
+                runtime="onnx",
+                golden_inputs=sample_model.golden_cases(),
+                quantization="int8-dynamic",
+            )
+
+    def test_onnx_refuses_taps_it_has_no_handles_for(self, tmp_path) -> None:
+        with pytest.raises(ExportError, match="portable"):
+            export_model(
+                model=sample_model.build(),
+                example_inputs=sample_model.example_inputs(),
+                out_dir=tmp_path / "t",
+                name="two_layer",
+                runtime="onnx",
+                golden_inputs=sample_model.golden_cases(),
+                taps=["fc1"],
+            )
+
+    def test_an_unknown_runtime_lists_the_ones_it_writes_for(self, tmp_path) -> None:
+        with pytest.raises(ExportError, match="executorch"):
+            export_model(
+                model=sample_model.build(),
+                example_inputs=sample_model.example_inputs(),
+                out_dir=tmp_path / "n",
+                name="two_layer",
+                runtime="tflite",
+            )
+
+
 class TestRefusals:
     def test_core_ml_lowers_and_the_manifest_says_so(self, tmp_path: pathlib.Path) -> None:
         # An artifact is lowered for one delegate, so which backend ran a number

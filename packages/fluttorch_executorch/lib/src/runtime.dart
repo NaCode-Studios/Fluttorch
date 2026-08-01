@@ -33,6 +33,17 @@ final class ExecuTorchRuntime implements FluttorchRuntime {
     // cheapest place to catch that is before the bytes leave Dart.
     verifyArtifact(artifact: artifact, manifest: manifest);
 
+    // And before that, whether this runtime is the one the bundle was written
+    // for. A .onnx handed to ExecuTorch passes the weight hash, because the
+    // hash was computed over whichever artifact was written, and then fails
+    // somewhere in the loader with a message about bytes.
+    if (manifest.runtime != null && manifest.runtime != 'executorch') {
+      throw BackendUnavailableException(
+        requested: '${manifest.runtime} runtime',
+        available: const ['executorch'],
+      );
+    }
+
     if (backend != null && !_bindings.backends().contains(backend)) {
       throw BackendUnavailableException(
         requested: backend,

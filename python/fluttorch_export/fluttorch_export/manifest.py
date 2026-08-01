@@ -24,6 +24,15 @@ SCHEMA_VERSION = 1
 #: Marks a dimension whose extent is decided at run time.
 DYNAMIC_DIM = -1
 
+#: Engines that can execute an artifact. Absent means "executorch", which is what
+#: every manifest written before this field meant by saying nothing.
+#:
+#: Separate from the backend, which names a delegate or provider *within* a
+#: runtime. XNNPACK is an ExecuTorch delegate and CoreMLExecutionProvider is an
+#: ONNX Runtime provider, and collapsing the two axes into one field is how a
+#: bundle ends up describing a combination that does not exist.
+RUNTIMES: frozenset[str] = frozenset({"executorch", "onnx"})
+
 #: Compute precisions a delegate can be lowered at, and that the gate can size a
 #: bound for. Float32 is written as absence rather than as a name, so a manifest
 #: from before the field existed keeps meaning what it always meant.
@@ -205,6 +214,17 @@ class ModelManifest:
     inputs: tuple[TensorSpec, ...]
     outputs: tuple[TensorSpec, ...]
     quantization: str | None = None
+    runtime: str | None = None
+    """The engine that executes this artifact, when it is not ExecuTorch.
+
+    An artifact is a `.pte` or a `.onnx` and the two are not interchangeable, so
+    a reader that loads one as the other gets a parse error at best. Nothing in
+    the bytes says which, and the weight hash cannot tell them apart because it
+    is computed over whichever one was written.
+
+    Absent means ExecuTorch, so a manifest from before this field keeps meaning
+    what it meant.
+    """
     precision: str | None = None
     """The compute precision the delegate was lowered at, when it is not float32.
 
@@ -292,6 +312,12 @@ class ModelManifest:
                 f"{self.name!r} declares {len(self.activations)} activation(s) that no "
                 "golden case records; a tap nothing was captured for cannot be compared"
             )
+        if self.runtime is not None and self.runtime not in RUNTIMES:
+            raise ManifestError(
+                f"{self.name!r} names runtime {self.runtime!r}; this build knows "
+                f"{', '.join(sorted(RUNTIMES))}. A runtime nobody can load is a "
+                "bundle that describes an artifact no reader will execute"
+            )
         if self.precision is not None and self.precision not in PRECISIONS:
             raise ManifestError(
                 f"{self.name!r} declares precision {self.precision!r}; this build "
@@ -319,6 +345,8 @@ class ModelManifest:
             "name": self.name,
             "weight_hash": self.weight_hash,
         }
+        if self.runtime is not None:
+            d["runtime"] = self.runtime
         if self.quantization is not None:
             d["quantization"] = self.quantization
         if self.precision is not None:
