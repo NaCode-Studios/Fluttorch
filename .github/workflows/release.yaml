@@ -16,21 +16,28 @@ jobs:
     uses: ./.github/workflows/ci.yaml
 
   # pub.dev authenticates the upload over OIDC against the repository and tag
-  # pattern configured on each package, so there is no token to hold. That
-  # exchange is also what earns the "published by a verified publisher" line on
-  # the package page. Provenance is attested separately, below.
+  # pattern configured on each package, so there is no token to hold. Provenance
+  # is attested separately, below.
+  #
+  # Written out rather than calling dart-lang/setup-dart's publish.yml, which
+  # declares permissions: id-token: write on its own job. A permissions block in
+  # a called workflow narrows the set again, so whatever the caller grants, its
+  # checkout runs without contents and a private repository answers "repository
+  # not found". That workflow works on public packages and cannot work here.
   publish-core:
     needs: verify
+    runs-on: ubuntu-latest
     permissions:
-      # Spelled out because a job-level permissions block replaces the default
-      # set rather than extending it. Without it contents is none, and the
-      # checkout inside the reusable workflow reports this private repository as
-      # not found, which is a 403 wearing a 404.
       contents: read
+      # setup-dart exchanges this for a short-lived pub.dev credential, which is
+      # also what earns the verified publisher line on the package page.
       id-token: write
-    uses: dart-lang/setup-dart/.github/workflows/publish.yml@v1
-    with:
-      working-directory: packages/fluttorch
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dart-lang/setup-dart@v1
+      - run: dart pub get
+      - run: dart pub publish --force
+        working-directory: packages/fluttorch
 
   # fluttorch_gen and fluttorch_test both declare fluttorch ^X.Y.Z, and pub.dev
   # refuses a package whose dependencies do not resolve. Publishing them in the
@@ -56,29 +63,33 @@ jobs:
 
   publish-gen:
     needs: await-core
+    runs-on: ubuntu-latest
     permissions:
-      # Spelled out because a job-level permissions block replaces the default
-      # set rather than extending it. Without it contents is none, and the
-      # checkout inside the reusable workflow reports this private repository as
-      # not found, which is a 403 wearing a 404.
       contents: read
+      # setup-dart exchanges this for a short-lived pub.dev credential, which is
+      # also what earns the verified publisher line on the package page.
       id-token: write
-    uses: dart-lang/setup-dart/.github/workflows/publish.yml@v1
-    with:
-      working-directory: packages/fluttorch_gen
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dart-lang/setup-dart@v1
+      - run: dart pub get
+      - run: dart pub publish --force
+        working-directory: packages/fluttorch_gen
 
   publish-test:
     needs: await-core
+    runs-on: ubuntu-latest
     permissions:
-      # Spelled out because a job-level permissions block replaces the default
-      # set rather than extending it. Without it contents is none, and the
-      # checkout inside the reusable workflow reports this private repository as
-      # not found, which is a 403 wearing a 404.
       contents: read
+      # setup-dart exchanges this for a short-lived pub.dev credential, which is
+      # also what earns the verified publisher line on the package page.
       id-token: write
-    uses: dart-lang/setup-dart/.github/workflows/publish.yml@v1
-    with:
-      working-directory: packages/fluttorch_test
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dart-lang/setup-dart@v1
+      - run: dart pub get
+      - run: dart pub publish --force
+        working-directory: packages/fluttorch_test
 
   # Deliberately not downstream of the publish jobs. The Release object is
   # derived from the tag and the changelog and is true whatever pub.dev did, and

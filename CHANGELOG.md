@@ -9,7 +9,14 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- The publish jobs are written out rather than calling
+  `dart-lang/setup-dart/.github/workflows/publish.yml`. That workflow declares
+  `permissions: id-token: write` on its own job, and a permissions block in a
+  called workflow narrows the set again, so whatever the caller grants, its
+  checkout runs without `contents` and a private repository answers "repository
+  not found". It works on public packages and cannot work here.
 
 ## [0.4.0] - 2026-08-01
 
