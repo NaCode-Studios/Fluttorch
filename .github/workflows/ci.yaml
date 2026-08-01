@@ -36,6 +36,8 @@ jobs:
         working-directory: packages/fluttorch_test
       - run: dart test
         working-directory: packages/fluttorch_gen
+      - run: dart test
+        working-directory: packages/fluttorch_executorch
       # The generator has to actually run, not merely be unit-tested: the
       # committed output is regenerated and must come back identical, which
       # catches a builder that works only in a test harness.

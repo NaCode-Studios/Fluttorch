@@ -1,27 +1,16 @@
 /// ExecuTorch backend for Fluttorch.
 ///
-/// The first implementation of [FluttorchRuntime]. Phase one delegates to the
-/// existing `executorch_flutter` bindings to reach end to end quickly; the
-/// activation taps, deterministic execution and backend pinning that per-layer
-/// drift attribution needs are not reachable through them, so this package is
-/// expected to grow its own `dart:ffi` binding once M1 has established exactly
-/// which hooks are missing.
+/// The parity gate needs four things no published Dart binding to ExecuTorch
+/// exposes: a backend pinned at load, execution repeatable enough that a
+/// tolerance measures the model rather than the noise, intermediate activations,
+/// and output buffers the caller owns. This package is being written for those,
+/// not for ownership.
+///
+/// The boundary with the native library is `src/fluttorch_executorch.h`, mirrored
+/// in Dart by [ExecuTorchBindings]. Everything above that seam is ordinary Dart
+/// and is tested as such; below it is the one part that must be compiled against
+/// ExecuTorch.
 library;
 
-import 'dart:typed_data';
-
-import 'package:fluttorch/fluttorch.dart';
-
-/// Runs models exported by `fluttorch-export` through ExecuTorch.
-final class ExecuTorchRuntime implements FluttorchRuntime {
-  @override
-  Future<List<RuntimeCapabilities>> capabilities() =>
-      throw UnimplementedError('M2 · end-to-end spike');
-
-  @override
-  Future<LoadedModel> load({
-    required Uint8List artifact,
-    required ModelManifest manifest,
-    String? backend,
-  }) => throw UnimplementedError('M2 · end-to-end spike');
-}
+export 'src/bindings.dart';
+export 'src/runtime.dart';

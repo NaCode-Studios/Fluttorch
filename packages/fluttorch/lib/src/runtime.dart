@@ -79,10 +79,16 @@ abstract interface class FluttorchRuntime {
   /// [BackendUnavailableException] if [backend] was named and is not there.
   /// When [backend] is null the runtime picks its preferred available one, and
   /// [LoadedModel.backend] reports what it settled on.
+  ///
+  /// [deterministic] asks for execution repeatable enough that two runs of the
+  /// same input agree. It throws [CapabilityUnavailableException] rather than
+  /// falling back, because a tolerance chosen against a promise that was quietly
+  /// dropped is a tolerance measuring run-to-run noise.
   Future<LoadedModel> load({
     required Uint8List artifact,
     required ModelManifest manifest,
     String? backend,
+    bool deterministic = false,
   });
 }
 

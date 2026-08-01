@@ -370,5 +370,6 @@ final class _NoRuntime implements FluttorchRuntime {
     required Uint8List artifact,
     required ModelManifest manifest,
     String? backend,
+    bool deterministic = false,
   }) => throw UnimplementedError();
 }

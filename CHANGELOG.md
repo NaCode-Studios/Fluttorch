@@ -9,6 +9,27 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
 
 ## [Unreleased]
 
+### Added
+
+- The seam between Fluttorch and ExecuTorch is declared as a C ABI in
+  `packages/fluttorch_executorch/src/fluttorch_executorch.h` (M20), and mirrored in
+  Dart by `ExecuTorchBindings`. It carries the four hooks no published binding
+  exposes: a backend pinned at load, execution repeatable enough that a tolerance
+  measures the model rather than the noise, activation taps, and output buffers the
+  caller owns.
+- `ExecuTorchRuntime` is implemented on top of that seam. The artifact is verified
+  before anything native sees it; a backend that does not exist is refused with the
+  list; a fallback reports the backend that ran rather than the one requested;
+  determinism fails rather than being quietly dropped; and a tap the graph does not
+  carry stays absent instead of arriving zero-filled, because a zero reads as
+  agreement.
+
+### Changed
+
+- `FluttorchRuntime.load` takes `deterministic`. It belongs on the seam rather than
+  on one backend, since it is the difference between a tolerance that measures a
+  model and one that measures run-to-run noise.
+
 ### Fixed
 
 - The linked artifact records are no longer skipped when the attestation fails, and
@@ -21,12 +42,6 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
   Python section at all, so they returned every time anyone ran the suite. They stay
   in the history, which rewriting would cost every tag and every published release to
   remove; what stops is adding more.
-- The publish jobs are written out rather than calling
-  `dart-lang/setup-dart/.github/workflows/publish.yml`. That workflow declares
-  `permissions: id-token: write` on its own job, and a permissions block in a
-  called workflow narrows the set again, so whatever the caller grants, its
-  checkout runs without `contents` and a private repository answers "repository
-  not found". It works on public packages and cannot work here.
 
 ## [0.4.0] - 2026-08-01
 
@@ -60,6 +75,12 @@ wrong.
 
 ### Fixed
 
+- The publish jobs are written out rather than calling
+  `dart-lang/setup-dart/.github/workflows/publish.yml`. That workflow declares
+  `permissions: id-token: write` on its own job, and a permissions block in a
+  called workflow narrows the set again, so whatever the caller grants, its
+  checkout runs without `contents` and a private repository answers "repository
+  not found". It works on public packages and cannot work here.
 - The publish jobs could not check the repository out. A job-level `permissions`
   block replaces the default set rather than extending it, so declaring only
   `id-token: write` left `contents` at none, and on a private repository
