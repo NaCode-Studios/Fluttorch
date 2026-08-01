@@ -105,6 +105,15 @@ pip install 'git+https://github.com/NaCode-Studios/Fluttorch.git#subdirectory=py
 Nothing here executes a model yet. `fluttorch_executorch` is in the repository and unpublished,
 because everything it implements currently throws.
 
+Archives published from `0.4.0` onwards carry a [SLSA build provenance](https://slsa.dev/)
+attestation, so you can check that what you resolved was built by this repository's release
+workflow rather than uploaded by someone else. `0.3.0` was published by hand and has none, which
+cannot be backfilled: an attestation is signed against the run that produced the archive.
+
+```bash
+gh attestation verify <archive> --repo NaCode-Studios/Fluttorch
+```
+
 ## Architecture
 
 ```

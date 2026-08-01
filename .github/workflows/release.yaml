@@ -18,9 +18,7 @@ jobs:
   # pub.dev authenticates the upload over OIDC against the repository and tag
   # pattern configured on each package, so there is no token to hold. That
   # exchange is also what earns the "published by a verified publisher" line on
-  # the package page, which is why there is no separate provenance attestation
-  # here: for a Dart package the archive is built and uploaded inside this
-  # exchange and never exists as a file to attest.
+  # the package page. Provenance is attested separately, below.
   publish-core:
     needs: verify
     permissions:
@@ -105,6 +103,50 @@ jobs:
           [ -s notes.md ] || { echo "::error::no CHANGELOG.md section for $VERSION"; exit 1; }
           gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md
 
+  # SLSA build provenance, which is what turns a linked artifact from a listing
+  # into a verifiable one:
+  #
+  #   gh attestation verify <archive> --repo NaCode-Studios/Fluttorch
+  #
+  # The usual rule is to attest before publishing, so that a failed attestation
+  # cannot leave an artifact released without one. That is not available here: a
+  # Dart archive is built inside `dart pub publish` and never lands on the runner
+  # as a file, so the only digest that exists is the one pub.dev serves after the
+  # upload. The attestation is therefore made by digest and afterwards, and a
+  # failure leaves a published version unattested until the job is re-run. That
+  # is a real gap and it is the reason this job is not `continue-on-error`.
+  #
+  # The attested set is derived from which packages are publishable rather than
+  # listed here, so a package that stops being held back is covered the day its
+  # publish_to line goes.
+  attest:
+    needs: [publish-core, publish-gen, publish-test]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Collect the published archives
+        run: |
+          : > checksums.txt
+          for pubspec in packages/*/pubspec.yaml; do
+            grep -q '^publish_to: none' "$pubspec" && continue
+            pkg=$(basename "$(dirname "$pubspec")")
+            curl -sf "https://pub.dev/api/packages/$pkg" > meta.json || {
+              echo "::error::pub.dev did not answer for $pkg"; exit 1; }
+            sha=$(jq -re '.latest.archive_sha256' meta.json)
+            ver=$(jq -re '.latest.version' meta.json)
+            echo "$sha  $pkg-$ver.tar.gz" >> checksums.txt
+          done
+          [ -s checksums.txt ] || { echo "::error::no publishable package found"; exit 1; }
+          cat checksums.txt
+
+      - uses: actions/attest-build-provenance@v3
+        with:
+          subject-checksums: checksums.txt
+
   # Metadata, not a second distribution channel: nobody resolves a dependency
   # from the Packages panel. It says what this repository built and which
   # registry holds it, keyed on the digest pub.dev serves the archive under.
@@ -117,21 +159,27 @@ jobs:
   #
   # The API documents no DELETE, so a record is permanent and a duplicate cannot
   # be cleaned up: check before writing.
+  # It runs after the attestation, because the green check on that page comes from
+  # the attestation and the record is what the check attaches to.
   link-artifacts:
-    needs: [publish-core, publish-gen, publish-test]
+    needs: attest
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
+      - uses: actions/checkout@v7
+
       - name: Record the published archives
         env:
           GH_TOKEN: ${{ secrets.ARTIFACT_METADATA_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          for pkg in fluttorch fluttorch_gen fluttorch_test; do
-            meta=$(curl -sf "https://pub.dev/api/packages/$pkg") || {
+          for pubspec in packages/*/pubspec.yaml; do
+            grep -q '^publish_to: none' "$pubspec" && continue
+            pkg=$(basename "$(dirname "$pubspec")")
+            curl -sf "https://pub.dev/api/packages/$pkg" > meta.json || {
               echo "::warning::pub.dev did not answer for $pkg"; continue; }
-            sha=$(echo "$meta" | python3 -c 'import sys,json; print(json.load(sys.stdin)["latest"]["archive_sha256"])')
-            url=$(echo "$meta" | python3 -c 'import sys,json; print(json.load(sys.stdin)["latest"]["archive_url"])')
-            ver=$(echo "$meta" | python3 -c 'import sys,json; print(json.load(sys.stdin)["latest"]["version"])')
+            sha=$(jq -re '.latest.archive_sha256' meta.json)
+            url=$(jq -re '.latest.archive_url' meta.json)
+            ver=$(jq -re '.latest.version' meta.json)
             if gh api "/orgs/${GITHUB_REPOSITORY_OWNER}/artifacts/sha256:$sha/metadata/storage-records" \
                  --silent 2>/dev/null; then
               echo "already recorded: $pkg $ver"

@@ -23,6 +23,15 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
   digest pub.dev serves them under. Metadata rather than distribution: nobody resolves a
   dependency from that panel. The step cannot fail the release, because a metadata write
   that can undo a successful publish is worth less than the metadata.
+- Every published archive is attested with SLSA build provenance, so it can be shown to
+  have come from this repository's workflow at a named commit rather than from somebody
+  who uploaded a lookalike. Attesting before publishing is not available for a Dart
+  package, because the archive is built inside `dart pub publish` and never lands on the
+  runner as a file, so the only digest that exists is the one the registry serves
+  afterwards. The attested set is derived from which packages are publishable rather than
+  listed, so a package covered the day its `publish_to` line goes. `0.3.0` has no
+  attestation and cannot be given one: it was published by hand, and there is no workflow
+  run to sign against.
 
 ## [0.3.0] - 2026-07-31
 
