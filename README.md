@@ -118,15 +118,210 @@ pip install 'git+https://github.com/NaCode-Studios/Fluttorch.git#subdirectory=py
 The three bindings execute models and are in the repository unpublished, because pub.dev cannot carry
 the native half. Building one is `tool/build_native.sh` in its package.
 
-A published archive carries a [SLSA build provenance](https://slsa.dev/) attestation when the
-release workflow was able to produce one, so you can check that what you resolved was built here
-rather than uploaded by someone else. `0.3.0` and `0.4.0` have none, and cannot be given one after
-the fact: an attestation is signed against the run that produced the archive, and neither of those
-runs made one.
+Every archive from `0.5.0` onward carries a [SLSA build provenance](https://slsa.dev/) attestation, so
+you can check that what you resolved was built by this repository's workflow rather than uploaded by
+someone else. `0.3.0` and `0.4.0` have none and cannot be given one: an attestation is signed against
+the run that produced the archive.
 
 ```bash
 gh attestation verify <archive> --repo NaCode-Studios/Fluttorch
 ```
+
+## Usage
+
+### Exporting a model
+
+The exporter writes three things together, and together is the point: an artifact paired with a
+manifest it was not generated from satisfies every shape and returns every number wrong.
+
+```bash
+fluttorch-export \
+  --model      my_project.models:build_classifier \
+  --example-inputs my_project.models:example_batch \
+  --goldens    my_project.models:validation_windows \
+  --out        build/classifier \
+  --input-names  image \
+  --output-names logits \
+  --quantize   int8-dynamic
+```
+
+`--goldens` is what separates coverage from a smoke test. Without it the exporter captures the example
+input alone and says so, because inventing a distribution it has no way to know would be worse than
+admitting there is one case.
+
+Name the tensors. Without `--input-names` the accessors are positional, and a generated getter called
+`input_0` is one nobody wants to read.
+
+### The generated API
+
+`fluttorch_gen` is a `build_runner` builder: it turns `build/classifier/classifier.fluttorch.json`
+into Dart beside it. Commit the result. Your CI regenerates and diffs it, which is what catches a
+manifest that moved without the code being rebuilt.
+
+```dart
+final classifier = await Classifier.load(runtime, artifact: bytes);
+final out = await classifier.run(image: ClassifierImage(pixels));
+final scores = out.logits.values;         // Float32List, over the same memory
+```
+
+Three things there are compile errors rather than runtime surprises. Passing the wrong tensor, because
+each one is its own extension type. Passing them in the wrong order, because `run` takes named
+arguments. And reading an output that does not exist.
+
+The wrapper costs nothing at run time: an extension type is the underlying `Tensor` after compilation.
+A wrong length is still caught, at construction, and names the tensor:
+
+```dart
+ClassifierImage(Float32List(100));
+// TensorShapeException on "image": expected 3072 values, got 100
+```
+
+### The parity gate
+
+The goldens captured at export replay in your suite. This is the part nothing else does.
+
+```dart
+test('the quantized model still agrees with the one we evaluated', () async {
+  final goldens = await DirectoryGoldenBundle.open(
+    'build/classifier/classifier.fluttorch.json',
+  );
+  final model = await runtime.load(
+    artifact: await File('build/classifier/classifier.pte').readAsBytes(),
+    manifest: goldens.manifest,
+  );
+
+  await expectParity(model, goldens: goldens);
+});
+```
+
+The tolerance comes from the recipe and the precision the manifest recorded, so an `int8-dynamic`
+model is not held to the bound a full-precision one answers to. Pass your own when you have measured
+it, which is the honest thing to do for a model whose activation ranges are nothing like the ones
+these defaults were measured on:
+
+```dart
+await expectParity(model, goldens: goldens, tolerance: Tolerance(
+  maxAbsolute: 2e-3,
+  maxRelative: 8e-3,
+  minCosine: 0.9995,
+));
+```
+
+### Reading a failure
+
+A drift report names the tensor, the bound it broke, the element that broke it, and the backend that
+produced the number. None of those is inferable from the others.
+
+```
+FAIL  parity/case-3
+      backend: xnnpack  quantization: int8-static  precision: float32
+      output "logits"  max |Δ| 1.72  >  Tolerance(atol 0.2, rtol 0.2, cos ≥ 0.998)  worst at [0]: 14.0210 vs 12.3000
+        2 of 4 elements (50.0%) exceed the elementwise bound
+      no layer attribution: backend "xnnpack" offers no activation taps
+```
+
+That last line is a capability, not an apology. Export with `--taps fc1,fc2` and a backend that can
+read intermediates, and the report names the earliest layer whose numbers moved instead of only the
+output that was wrong.
+
+Drift is deliberately not an exception. It is a measurement, and turning a measurement into an error
+would leave nowhere to put the number.
+
+### Choosing a runtime
+
+`FluttorchRuntime` is the only seam a backend touches. Nothing above it knows which engine is running
+the model.
+
+```dart
+final runtime = ExecuTorchRuntime(NativeExecuTorchBindings.open());
+// or
+final runtime = OnnxRuntime.open();
+final runtime = LiteRtRuntime.open();
+```
+
+The manifest records which engine an artifact was lowered for, so handing a `.pte` to ONNX Runtime is
+refused at load rather than failing somewhere inside a session. That refusal is worth having: the
+weight hash cannot catch it, because it is computed over whichever artifact was written.
+
+Capabilities are asked for, never assumed:
+
+```dart
+if (model.capabilities.supportsActivationTaps) { ... }
+if (model.capabilities.supportsDeterministicExecution) { ... }
+```
+
+Whether a device can expose intermediates or promise a repeatable reduction order is a property of the
+hardware. Asking for determinism you cannot have throws rather than quietly running without it,
+because a tolerance chosen against a promise that was silently dropped is a tolerance measuring noise.
+
+### On a hot path
+
+`run` allocates an output tensor per call. `runInto` writes into buffers you keep:
+
+```dart
+final outputs = [Tensor.zeros(ClassifierLogits.spec)];
+await model.runInto(inputs: [image.tensor], outputs: outputs);
+```
+
+It saves four to seven microseconds and the saving does not scale with the model, so it is three times
+faster on something small called at frame rate and under two per cent on a convolutional network.
+[`docs/benchmarks.md`](docs/benchmarks.md) has the numbers and the tool that produced them.
+
+### Preprocessing, generated rather than rewritten
+
+Preprocessing is where the two-language problem bites hardest: written once in Python for training and
+again in Dart for serving, the copies drift at the first refactor. The manifest records the steps and
+the generator emits them.
+
+```dart
+final image = ClassifierImage.fromSource(frame, height: 480, width: 640);
+// frame is the Float32List the camera gave you, at whatever size it gave it
+```
+
+The resize, the centre crop and the normalize come from what training recorded, including the rounding
+convention. A centre crop with an odd margin lands on one row or the row above it, and both produce a
+picture, which is why that one is generated rather than trusted to a second implementation.
+
+A step this build cannot perform is named and refused rather than approximated with the nearest one it
+has.
+
+### Every backend at once
+
+```bash
+cd packages/fluttorch_executorch && dart run tool/parity_matrix.dart
+```
+
+```
+PASS  parity matrix  8 golden(s) across 4 backend(s)
+  golden       portable       xnnpack        coreml           mps
+  case-0        1.3e-7        1.3e-7        3.1e-4        1.2e-4
+  ...
+  coreml: no quantization, float16, measured against Tolerance(atol 0.001, rtol 0.02, cos ≥ 0.9999)
+```
+
+Each column answers to the bound its own manifest implies, from the recipe and the precision together,
+because Core ML and MPS lower to float16 by default and an artifact that did is not wrong for saying
+so. A backend the build lacks is listed as not run rather than omitted: a matrix that quietly drops a
+column reads as coverage.
+
+### When the weights do not fit in the graph
+
+Above a size the exporting toolchain decides for itself, the weights leave the graph and land beside
+it. The manifest names those parts and the weight hash covers them, so the pairing still covers the
+numbers rather than only the structure.
+
+```dart
+final goldens = await DirectoryGoldenBundle.open('build/big/big.fluttorch.json');
+final model = await runtime.load(
+  artifact: await File('build/big/big.onnx').readAsBytes(),
+  manifest: goldens.manifest,
+  parts: await goldens.parts(),
+);
+```
+
+Omit `parts` and the load throws `BundlePartMissingException` naming the file that did not arrive.
+That refusal is the feature: a graph without the weights it references still parses, still declares
+every shape the manifest promised, still runs, and answers from nothing.
 
 ## Architecture
 
@@ -155,42 +350,18 @@ packages/fluttorch          manifest, tensor specs, drift metrics, runtime inter
 
 ## Roadmap
 
-**Shipped (`0.4.0`).** Tiers 0 to 4. The manifest schema, with a canonical Python writer and a Dart
-reader that reproduce the same document byte for byte down to denormals and negative zero;
-`fluttorch-export`, which produces an artifact, its manifest and its goldens in one command, and
-quantizes it on request; `fluttorch_gen`, which turns that manifest into an API where the compiler
-rejects the wrong tensor; and the parity gate, which replays those goldens, fails the build with a
-report naming the tensor, the bound it broke and the backend that ran it, and where the export
-captured taps also names the earliest layer whose numbers moved.
+| Version | Tiers | What landed |
+| --- | --- | --- |
+| `0.4.0` | 0 to 4 | The manifest schema, with a Python writer and a Dart reader that reproduce the same document byte for byte down to denormals and negative zero. `fluttorch-export`, `fluttorch_gen`, and the parity gate. |
+| `0.5.0` | 5 and 6 | Fluttorch's own `dart:ffi` binding to ExecuTorch, carrying the four hooks no published binding exposes: a backend pinned at load, repeatable execution, activation taps, and output buffers the caller owns. |
+| `0.6.0` | 7 | The binding reaches a phone. ExecuTorch cross-compiles for Android arm64 and iOS, and ONNX Runtime and LiteRT implement the same C ABI, which turns the runtime-agnostic claim into something measured. |
+| `0.7.0` | 8 | Spatial preprocessing generated rather than refused, five failures with five distinct remedies, and VoltaCast exported and measured. |
 
-**Shipped (`0.5.0`).** Tiers 5 and 6. Fluttorch's own `dart:ffi` binding to ExecuTorch, carrying the
-four hooks no published binding exposes: a backend pinned at load, execution repeatable enough that a
-tolerance measures the model rather than the hardware, activation taps, and output buffers the caller
-owns. Eight backends the exporter knows and reports honestly on the machine it is asked from, with
-XNNPACK, Core ML and MPS measured rather than described. One parity report across all of them, each
-column answering to the bound its own manifest implies, from the recipe and the precision together.
-
-**Shipped (`0.6.0`).** Tier 7. The binding reaches a phone: ExecuTorch and the shim cross-compile for
-Android arm64 and for iOS, and `fluttorch_executorch_flutter` puts the result inside an app, as
-`jniLibs` on Android and as an archive force-loaded into the binary on iOS, where an app cannot load
-a dylib from its bundle. ONNX Runtime and LiteRT implement the same C ABI as ExecuTorch, which turns
-the runtime-agnostic claim into something measured, and the manifest now records which engine
-executes an artifact so the wrong one refuses it instead of failing somewhere inside a session.
-Inference runs on a worker isolate rather than on the thread that draws.
-
-**Shipped (`0.7.0`).** Tier 8. A tensor spec records which axes are spatial, so `resize` and
-`center_crop` are generated instead of refused, and the generated crop rounds the way torchvision
-does rather than the way Dart does, which on an odd margin was one row of the picture. Five failures
-carry five distinct messages and each says what to do about it, with drift deliberately not among
-them because it is a measurement rather than an error. VoltaCast is exported, measured and documented.
-The documentation is a [site](https://nacode-studios.github.io/Fluttorch/).
-
-**Shipped (`1.0.0`).** Tier 9. Stabilisation. The tolerances are measured against two models rather
-than started from, and the parity matrix runs on one with convolutions and normalisation instead of
-two linear layers that had nowhere to disagree. An artifact can be more than one file, so a model
-whose weights leave its graph is carried with a hash that still covers the numbers. A manifest can
-declare two inputs and two outputs and every engine keeps them apart. The API freeze is written down,
-and so is what a run costs.
+**`1.0.0`.** Tier 9. The tolerances are measured against two models rather than started from, and the
+parity matrix runs on one with convolutions and normalisation instead of two linear layers that had
+nowhere to disagree. An artifact can be more than one file, so a model whose weights leave its graph
+is carried with a hash that still covers the numbers. The API freeze is written down, and so is what
+a run costs.
 
 **Next.** The targets Flutter has that this runtime does not yet reach: the web backend, a signed
 manifest, and parity proven where cost is not.
