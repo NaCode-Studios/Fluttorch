@@ -9,6 +9,27 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
 
 ## [Unreleased]
 
+### Internal
+
+- The ExecuTorch build installs the Python its kernel codegen imports. The four
+  generators CMake invokes import `yaml`, and three of them import `torchgen`,
+  which ships inside the torch wheel rather than as a package of its own. The
+  workflow set up an interpreter and put nothing in it, and because the codegen
+  is the last target of the build, the failure arrived at 100 per cent, an hour
+  and a quarter after the omission that caused it.
+- The on-device build compiles the tracer hooks. `EXECUTORCH_BUILD_DEVTOOLS` was
+  absent from the workflow's configure, so the runtime it built could not read
+  intermediates and the suite failed the one assertion that says so. A job that
+  exercised three of the four hooks this binding exists for was measuring less
+  than it appeared to. The cache key now covers the workflow as well as the
+  build script, because the configure lives here and a changed one was restoring
+  a tree compiled under the old flags.
+- `On device` runs on demand and no longer on a weekly schedule. The first
+  complete run measured that hour and a quarter on a three-core macOS runner,
+  which is the largest single block of compute this repository asks for, and a
+  timer measures the calendar rather than what changed. Nothing about the answer
+  moves in a week where the native half did not.
+
 ## [0.6.0] - 2026-08-02
 
 ### Added

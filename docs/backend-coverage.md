@@ -21,11 +21,14 @@ Linux and lowers there quite happily, and the artifact it produces cannot run on
 any circumstances. Lowering for a backend and running on it are separate claims, and only one of
 them is answerable off the hardware.
 
-The runtime half is checked by the `On device` workflow, on an Apple silicon runner, weekly and on
-demand rather than on every pull request. Building ExecuTorch is the better part of an hour, and a
-gate that shape on every push is one somebody eventually routes around. Everywhere else the
-on-device suite skips by name, which is what keeps a green pull request honest about what it did not
-cover.
+The runtime half is checked by the `On device` workflow, on an Apple silicon runner, on demand rather
+than on a schedule or on every pull request. A complete run measured an hour and a quarter on a
+three-core runner, nearly all of it building ExecuTorch, so it runs when somebody wants the evidence:
+before a release, and after the native half changes. Everywhere else the on-device suite skips by
+name, which is what keeps a green pull request honest about what it did not cover.
+
+Read a coverage claim on this page against the date of the last run rather than against the calendar.
+Nothing here re-checks itself.
 
 ## Where the numbers come from
 

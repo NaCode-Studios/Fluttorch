@@ -8,16 +8,18 @@ name: On device
 # the gate says by how much. Nothing below is checkable on a runner that only
 # has Dart.
 #
-# Not on every pull request, and not because it is optional. Building ExecuTorch
-# is the better part of an hour and several gigabytes, so a gate that shape on
-# every push is one somebody eventually routes around, and a gate people route
-# around is worse than one that runs weekly and is believed. The on-device suite
-# skips by name everywhere else, which is what keeps the fast jobs honest about
-# what they did not cover.
+# Dispatch only, and not because it is optional. One complete run measured an
+# hour and a quarter on a three-core macOS runner, which is by a wide margin the
+# largest single block of compute this repository asks for. It ran weekly until
+# the first complete run made that number real, and a timer measures the
+# calendar rather than what changed: nothing about this answer moves in a week
+# where the native half did not. So it runs when somebody wants the evidence,
+# which in practice is before a release and after the binding changes.
+#
+# The on-device suite skips by name everywhere else, which is what keeps the
+# fast jobs honest about what they did not cover.
 
 on:
-  schedule:
-    - cron: "0 5 * * 1"
   workflow_dispatch:
 
 # Pinned, because the cache key is only meaningful against one version and
@@ -54,10 +56,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.EXECUTORCH_DIR }}
-          # The build script is in the key: it decides which delegates are
-          # linked, so a change to it has to invalidate a tree built without
-          # them.
-          key: executorch-${{ env.EXECUTORCH_REF }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/fluttorch_executorch/tool/build_native.sh') }}
+          # Both files that decide what the tree contains are in the key. The
+          # build script decides which delegates are linked; this workflow holds
+          # the cmake configure, which decides what was compiled in the first
+          # place. Hashing only the script meant a changed configure restored a
+          # tree built under the old one, and the tests would fail against a
+          # runtime nobody could see the flags for.
+          key: executorch-${{ env.EXECUTORCH_REF }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/fluttorch_executorch/tool/build_native.sh', '.github/workflows/on-device.yaml') }}
 
       # ExecuTorch's kernel codegen is Python, and CMake runs it as the last
       # target of the build. Its four generators import yaml, and three of them
@@ -70,6 +75,12 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true'
         run: pip install torch==2.12.0 pyyaml
 
+      # DEVTOOLS is what compiles the tracer hooks that activation taps read
+      # through. They are #ifdef'd inside the executor, so a shim built against
+      # a runtime without it collects nothing and reports every layer absent,
+      # and the suite says so: the first complete run failed one assertion, that
+      # this build can read intermediates. A job that exercises three of the
+      # four hooks this binding exists for is not the job this is meant to be.
       - name: Build ExecuTorch
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
@@ -79,6 +90,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DEXECUTORCH_BUILD_XNNPACK=ON \
             -DEXECUTORCH_BUILD_MPS=ON \
+            -DEXECUTORCH_BUILD_DEVTOOLS=ON \
             -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
             -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \
             -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
