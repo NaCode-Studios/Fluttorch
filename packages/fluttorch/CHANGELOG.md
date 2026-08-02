@@ -4,6 +4,22 @@ This file records what changed in `fluttorch`, the contract package. The whole
 project's record, covering every package and the Python exporter together, is in
 [the repository changelog](https://github.com/NaCode-Studios/Fluttorch/blob/main/CHANGELOG.md).
 
+## 1.0.0
+
+- A manifest can name the parts an artifact references and cannot be loaded
+  without, and `weightHash` covers them as well as the artifact. `BundlePart`,
+  `bundleDigestOf` and a `parts` argument on `verifyArtifact` and on
+  `FluttorchRuntime.load`. `BundlePartMissingException` names the file that did
+  not arrive, because a graph loaded without the weights it references still
+  parses and still answers.
+- `currentSchemaVersion` rises to 2, and an export declares it only when it
+  carries parts. Every other field added to this schema has been additive; this
+  one is not, and the version is what stops an older reader loading structure
+  with no numbers in it.
+- The API is frozen. See
+  [STABILITY.md](https://github.com/NaCode-Studios/Fluttorch/blob/main/STABILITY.md)
+  for what that covers and how long a deprecated API survives.
+
 ## 0.7.0
 
 - `TensorLayout`, so a spec can say which axes are spatial, and
