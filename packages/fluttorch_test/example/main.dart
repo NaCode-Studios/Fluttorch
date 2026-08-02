@@ -14,9 +14,9 @@ void main() {
   // model on a half-precision GPU is wrong in both ways at once.
   // Nullable on purpose. A recipe this build does not know has no bound, and
   // inventing one would be a gate measuring against a number nobody chose.
-  final full = Tolerance.startingPointFor(null)!;
-  final quantized = Tolerance.startingPointFor('int8-dynamic')!;
-  final half = Tolerance.startingPointFor(null, precision: 'float16')!;
+  final full = Tolerance.boundFor(null)!;
+  final quantized = Tolerance.boundFor('int8-dynamic')!;
+  final half = Tolerance.boundFor(null, precision: 'float16')!;
 
   print('full precision : rtol ${full.maxRelative}, atol ${full.maxAbsolute}');
   print(
@@ -26,7 +26,7 @@ void main() {
   print('float16        : rtol ${half.maxRelative}, atol ${half.maxAbsolute}');
   print(
     'an unknown recipe has no bound: '
-    '${Tolerance.startingPointFor('int3-imaginary')}',
+    '${Tolerance.boundFor('int3-imaginary')}',
   );
 
   // Measuring one tensor against its reference. `measureParity` does this over

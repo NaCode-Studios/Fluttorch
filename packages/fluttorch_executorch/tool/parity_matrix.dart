@@ -19,13 +19,21 @@ import 'package:fluttorch_executorch/src/ffi.dart';
 import 'package:fluttorch_test/fluttorch_test.dart';
 import 'package:fluttorch_test/io.dart';
 
-/// Which export under testdata/ answers for which backend.
-const _exports = <String, String>{
-  'xnnpack': '../../testdata/quantized',
-  'portable': '../../testdata/taps',
-  'coreml': '../../testdata/coreml',
-  'mps': '../../testdata/mps',
-};
+/// The model the matrix is run on, exported once per backend.
+///
+/// One bundle per backend rather than one shared artifact, because an ExecuTorch
+/// export is lowered *for* a delegate: handing the xnnpack artifact to Core ML
+/// would measure which file was loaded rather than which delegate ran it.
+///
+/// `python/fluttorch_export/scripts/export_matrix.py` writes them. It is a
+/// convolutional network with two kinds of normalisation and a softmax, and
+/// every one of those is there because it is somewhere two delegates can
+/// legitimately disagree. The two-layer model the matrix used to run on has
+/// none of them: its columns came out ordered the way arithmetic says they
+/// should, which showed the measurement worked and nothing about whether it was
+/// useful.
+const _matrixRoot = '../../testdata/matrix';
+const _backends = ['portable', 'xnnpack', 'coreml', 'mps', 'mlx'];
 
 Future<void> main(List<String> args) async {
   final library = File(
@@ -47,23 +55,23 @@ Future<void> main(List<String> args) async {
   final models = <LoadedModel>[];
   final skipped = <String, String>{};
 
-  for (final entry in _exports.entries) {
-    if (!linked.contains(entry.key)) {
-      skipped[entry.key] = 'not linked into this build of the binding';
+  for (final backend in _backends) {
+    if (!linked.contains(backend)) {
+      skipped[backend] = 'not linked into this build of the binding';
       continue;
     }
-    final dir = Directory(entry.value);
+    final dir = Directory('$_matrixRoot/$backend');
     if (!dir.existsSync()) {
-      skipped[entry.key] = 'no export under ${entry.value}';
+      skipped[backend] = 'no export under ${dir.path}';
       continue;
     }
     final goldens = await DirectoryGoldenBundle.open(
-      '${dir.path}/two_layer.fluttorch.json',
+      '${dir.path}/matrix.fluttorch.json',
     );
     final model = await ExecuTorchRuntime(bindings).load(
-      artifact: await File('${dir.path}/two_layer.pte').readAsBytes(),
+      artifact: await File('${dir.path}/matrix.pte').readAsBytes(),
       manifest: goldens.manifest,
-      backend: entry.key,
+      backend: backend,
     );
     models.add(model);
     entries.add(MatrixEntry(model: model, goldens: goldens));

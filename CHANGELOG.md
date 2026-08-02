@@ -42,6 +42,37 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
   version is the only thing standing between an older reader and a model with no
   numbers in it. Nothing that already shipped needs re-exporting.
 
+- The parity matrix runs on a model that can go wrong. It had only ever been
+  run on two linear layers, 4 to 8 to 3, whose columns came out ordered the way
+  arithmetic says they should: real evidence that the measurement works, and
+  none at all that it is useful. `testdata/matrix` is a convolutional network
+  with a foldable `BatchNorm2d`, a `GroupNorm` that reduces at run time and a
+  softmax, exported once per backend because an ExecuTorch artifact is lowered
+  for a delegate and handing one to another measures which file was loaded.
+
+### Changed
+
+- Every tolerance is measured rather than guessed, and says on what.
+  `Tolerance.startingPointFor` is now `Tolerance.boundFor`, because the old name
+  was accurate and had stopped being true: each entry cites the models it was
+  measured against and `tool/measure_tolerances.dart` reproduces the numbers.
+
+  The measurements say something worth knowing. The two-layer model drifts
+  further than the convolutional one on every backend, by up to eight times, and
+  it is the simpler network. Its outputs land near `9.4` while the other ends in
+  a softmax that pins its own into `[0, 1]`, and a relative error is measured
+  against the output while the rounding happened on intermediates. So the bounds
+  are set by the model with the large outputs, and narrowing them to what the
+  better-behaved fixture alone would justify was tried and failed the other one
+  immediately.
+
+  `int8-dynamic` widens from `5e-2` to `1e-1`. It was measured at `4.1e-2`, which
+  is not a margin of 1.2 but a coincidence, and a build on other hardware had
+  every chance of tipping a committed fixture over it. `int8-static` and
+  `int4-weight-only` widen to keep the recipes ordered. `int4-weight-only` is the
+  one entry still unmeasured, and now says so: nothing in this toolchain exports
+  it.
+
 ### Fixed
 
 - A failure inside the runtime is reported as one. `RuntimeExecutionException`

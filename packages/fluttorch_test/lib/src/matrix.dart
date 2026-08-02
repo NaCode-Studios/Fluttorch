@@ -60,6 +60,19 @@ final class ParityMatrix {
 
   /// The worst drift any backend showed for one golden, so a row can be read
   /// without reading every cell in it.
+  /// The compute precision [backend] actually lowered this model at.
+  ///
+  /// Read from the artifact's manifest rather than inferred from the backend's
+  /// name: whether a delegate halves precision is that delegate's decision and
+  /// can differ between two exports of the same model. Null where the export
+  /// recorded nothing, which means float32.
+  String? precisionOf(String backend) {
+    for (final r in reports) {
+      if (r.backend == backend) return r.precision;
+    }
+    return null;
+  }
+
   double worstFor(String goldenId) {
     var worst = 0.0;
     for (final r in reports) {
