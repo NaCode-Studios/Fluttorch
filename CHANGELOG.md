@@ -9,6 +9,56 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
 
 ## [Unreleased]
 
+### Added
+
+- A tensor spec can record its layout, `nchw` or `nhwc`, and `resize` and
+  `center_crop` are generated from it (M31). Both were understood and refused
+  before, because performing either means knowing which axes are spatial and
+  nothing recorded it, which stopped every image model at the door. Absence is
+  not a default: a spec that says nothing is not a spec that says NCHW, and
+  asking one that does not say raises rather than answering. The two steps
+  change the element count, so they become a `fromSource(values, height:,
+  width:)` constructor rather than joining the in-place `preprocess()` pass.
+- Three new refusals in the generator, each a case where emitting something
+  would be worse than emitting nothing: a resize filter this build does not
+  implement is named rather than approximated with bilinear, a spatial step
+  recorded after an elementwise one is refused rather than silently reordered,
+  and spatial steps against a multi-input model are refused because nothing
+  says which input they apply to.
+- Every `FluttorchException` carries a `remedy` beside its `message` (M30). The
+  cause and the fix are different sentences and a caller showing a failure to a
+  user usually wants only the second, and it is a field rather than a
+  convention so a member cannot quietly stop having one.
+- `DTypeUnsupportedException`, for a backend with no kernel for an element type.
+  It names the tensor, the type, the backend and what that backend does carry.
+- VoltaCast, the flagship example (M29): a seq2seq Transformer forecasting
+  Italian electricity demand a day ahead, trained on eleven years of real data,
+  exported here and measured through LiteRT against references captured from the
+  source model on real midnight origins. Worst absolute drift `5.96e-7`. It is
+  also the first model this binding has carried with more than one input, and
+  the generator handled it unchanged.
+- A documentation site at
+  [nacode-studios.github.io/Fluttorch](https://nacode-studios.github.io/Fluttorch/)
+  (M28): concepts, a quickstart, where a tolerance comes from, and the error
+  taxonomy. Written to argue rather than to enumerate, because the API is
+  generated and typed and what a reader cannot get from it is why each refusal
+  is worth more than the convenience it costs.
+- Each published package gains a `CHANGELOG.md` and an example that runs, which
+  is what pub.dev reads and what it was scoring them down for.
+
+### Fixed
+
+- The generated `center_crop` took the wrong row on an odd margin. Python rounds
+  a tie to the even neighbour and Dart rounds away from zero, so they disagree on
+  three of five half-values, and the result was still a picture. The fixture that
+  caught it leaves a margin of five on one axis on purpose, and the reference
+  comes from torch rather than from this code.
+- The three runtimes reported "this backend has no kernel for that element type"
+  with `DTypeMismatchException`, whose message reads "tensor features holds
+  float32 and was read as int8". Nothing had read anything: the manifest and the
+  buffer agreed and the device could not carry them. That message sends a reader
+  to look at code that is correct. The suite had pinned it.
+
 ### Internal
 
 - The ExecuTorch build installs the Python its kernel codegen imports. The four
