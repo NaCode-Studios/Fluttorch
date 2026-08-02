@@ -30,6 +30,7 @@ final _coreml = Directory('../../testdata/coreml');
 final _taps = Directory('../../testdata/taps');
 final _mps = Directory('../../testdata/mps');
 final _voltacast = Directory('../../testdata/voltacast');
+final _multiIo = Directory('../../testdata/multi_io');
 
 void main() {
   if (!_library.existsSync() || !_quantized.existsSync()) {
@@ -596,6 +597,86 @@ void main() {
             'if this now passes, ExecuTorch executes the model and this whole '
             'group should become the parity gate it was written to be',
       );
+    });
+  });
+
+  // Every other export in this repository returns one tensor, so the code that
+  // keeps a second one in the right order has been read and never run. This
+  // fixture exists to run it.
+  //
+  // Its two inputs share a shape and so do its two outputs, which is the choice
+  // that gives the group its teeth: a pair that differed in shape would be
+  // caught on the way past by the shape check, and the test would then pass for
+  // a reason that has nothing to do with ordering.
+  group('two inputs and two outputs, kept apart', () {
+    late DirectoryGoldenBundle goldens;
+    late LoadedModel model;
+
+    setUpAll(() async {
+      goldens = await DirectoryGoldenBundle.open(
+        '${_multiIo.path}/multi_io.fluttorch.json',
+      );
+      model = await ExecuTorchRuntime(bindings).load(
+        artifact: await File('${_multiIo.path}/multi_io.pte').readAsBytes(),
+        manifest: goldens.manifest,
+        backend: 'portable',
+      );
+    });
+
+    tearDownAll(() async => model.dispose());
+
+    test('the manifest carries two of each, and they look alike', () {
+      expect(model.manifest.inputs.map((s) => s.name), ['left', 'right']);
+      expect(model.manifest.outputs.map((s) => s.name), [
+        'primary',
+        'auxiliary',
+      ]);
+      expect(
+        model.manifest.inputNamed('right').shape,
+        model.manifest.inputNamed('left').shape,
+        reason: 'matching shapes are what remove the shape check as a crutch',
+      );
+      expect(
+        model.manifest.outputNamed('auxiliary').shape,
+        model.manifest.outputNamed('primary').shape,
+      );
+    });
+
+    test('the gate measures both outputs, not just the first', () async {
+      await expectParity(model, goldens: goldens);
+
+      // A gate that replayed one of the two would pass this model while saying
+      // nothing about half of it, and would say it in the same words.
+      final reports = await measureParity(model, goldens: goldens);
+      expect(reports, hasLength(4));
+      for (final report in reports) {
+        expect(report.tensors, hasLength(2));
+      }
+    });
+
+    test('the inputs are threaded in order, not merely accepted', () async {
+      final golden = goldens.cases.first;
+      final left = await goldens.tensor(
+        golden.inputKeys[0],
+        model.manifest.inputs[0],
+      );
+      final right = await goldens.tensor(
+        golden.inputKeys[1],
+        model.manifest.inputs[1],
+      );
+
+      final straight = await model.run([left, right]);
+      // The same two buffers in the same two positions, carrying each other's
+      // values. A binding that passed the first buffer twice, or dropped the
+      // second, returns the same numbers for both of these; one that threads
+      // them through in order cannot.
+      final crossed = await model.run([
+        Tensor.view(spec: model.manifest.inputs[0], bytes: right.bytes),
+        Tensor.view(spec: model.manifest.inputs[1], bytes: left.bytes),
+      ]);
+
+      expect(straight[0].asFloat32List(), isNot(crossed[0].asFloat32List()));
+      expect(straight[1].asFloat32List(), isNot(crossed[1].asFloat32List()));
     });
   });
 }

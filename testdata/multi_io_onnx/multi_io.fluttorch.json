@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "name": "multi_io",
+  "weight_hash": "sha256:08055d1f40007f4c16c807983a071fbef26510abc8f9d482bf50cc1719c34aa4",
+  "runtime": "onnx",
+  "inputs": [
+    {
+      "name": "left",
+      "dtype": "float32",
+      "shape": [
+        1,
+        5
+      ]
+    },
+    {
+      "name": "right",
+      "dtype": "float32",
+      "shape": [
+        1,
+        5
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "name": "primary",
+      "dtype": "float32",
+      "shape": [
+        1,
+        3
+      ]
+    },
+    {
+      "name": "auxiliary",
+      "dtype": "float32",
+      "shape": [
+        1,
+        3
+      ]
+    }
+  ],
+  "goldens": [
+    {
+      "id": "case-0",
+      "inputs": [
+        "0/in/left.bin",
+        "0/in/right.bin"
+      ],
+      "outputs": [
+        "0/out/primary.bin",
+        "0/out/auxiliary.bin"
+      ]
+    },
+    {
+      "id": "case-1",
+      "inputs": [
+        "1/in/left.bin",
+        "1/in/right.bin"
+      ],
+      "outputs": [
+        "1/out/primary.bin",
+        "1/out/auxiliary.bin"
+      ]
+    },
+    {
+      "id": "case-2",
+      "inputs": [
+        "2/in/left.bin",
+        "2/in/right.bin"
+      ],
+      "outputs": [
+        "2/out/primary.bin",
+        "2/out/auxiliary.bin"
+      ]
+    },
+    {
+      "id": "case-3",
+      "inputs": [
+        "3/in/left.bin",
+        "3/in/right.bin"
+      ],
+      "outputs": [
+        "3/out/primary.bin",
+        "3/out/auxiliary.bin"
+      ]
+    }
+  ]
+}

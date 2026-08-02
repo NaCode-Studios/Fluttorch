@@ -22,10 +22,11 @@ final _library = File(
   '${Platform.isMacOS ? ".dylib" : ".so"}',
 );
 final _export = Directory('../../testdata/litert');
+final _multiIo = Directory('../../testdata/multi_io_litert');
 
 void main() {
   if (!_library.existsSync() || !_export.existsSync()) {
-    test('the ONNX gate needs tool/build_native.sh', () {}, skip: true);
+    test('the LiteRT gate needs tool/build_native.sh', () {}, skip: true);
     return;
   }
 
@@ -114,6 +115,61 @@ void main() {
         ),
         throwsA(isA<BackendUnavailableException>()),
       );
+    });
+  });
+
+  // The same fixture the ExecuTorch suite runs, over this engine. Each shim
+  // converts its own runtime's output list into ours, so one of them keeping a
+  // pair straight says nothing about the other two.
+  group('two inputs and two outputs, kept apart', () {
+    late DirectoryGoldenBundle multiIo;
+    late LoadedModel model;
+
+    setUpAll(() async {
+      multiIo = await DirectoryGoldenBundle.open(
+        '${_multiIo.path}/multi_io.fluttorch.json',
+      );
+      model = await runtime.load(
+        artifact: await File('${_multiIo.path}/multi_io.tflite').readAsBytes(),
+        manifest: multiIo.manifest,
+        backend: 'cpu',
+      );
+    });
+
+    tearDownAll(() async => model.dispose());
+
+    test('the gate measures both outputs, not just the first', () async {
+      await expectParity(model, goldens: multiIo);
+
+      final reports = await measureParity(model, goldens: multiIo);
+      expect(reports, hasLength(4));
+      for (final report in reports) {
+        expect(report.tensors, hasLength(2));
+      }
+    });
+
+    test('the inputs are threaded in order, not merely accepted', () async {
+      final golden = multiIo.cases.first;
+      final left = await multiIo.tensor(
+        golden.inputKeys[0],
+        model.manifest.inputs[0],
+      );
+      final right = await multiIo.tensor(
+        golden.inputKeys[1],
+        model.manifest.inputs[1],
+      );
+
+      final straight = await model.run([left, right]);
+      // The same two buffers in the same two positions, carrying each other's
+      // values. A binding that passed the first buffer twice, or dropped the
+      // second, returns the same numbers for both of these.
+      final crossed = await model.run([
+        Tensor.view(spec: model.manifest.inputs[0], bytes: right.bytes),
+        Tensor.view(spec: model.manifest.inputs[1], bytes: left.bytes),
+      ]);
+
+      expect(straight[0].asFloat32List(), isNot(crossed[0].asFloat32List()));
+      expect(straight[1].asFloat32List(), isNot(crossed[1].asFloat32List()));
     });
   });
 }

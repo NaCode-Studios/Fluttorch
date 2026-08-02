@@ -16,6 +16,15 @@ import 'support/fake_model.dart';
 /// actually produces, read by the code that has to consume it.
 const _manifestPath = '../../testdata/two_layer/two_layer.fluttorch.json';
 
+/// The one export in this repository that returns two tensors.
+///
+/// Everything else returns one, so the gate's loop over `manifest.outputs` has
+/// always had a single trip and the report has never had to say which of two
+/// outputs moved. Replaying it here rather than only on a device is deliberate:
+/// this half of the gate is Dart, it needs no engine, and a check that runs
+/// only where the native libraries are built is a check that does not run.
+const _multiIoPath = '../../testdata/multi_io/multi_io.fluttorch.json';
+
 void main() {
   late DirectoryGoldenBundle goldens;
 
@@ -105,6 +114,63 @@ void main() {
               contains('output "score"'),
               contains('worst at [1]'),
               contains('1 of 3 elements'),
+            ),
+          ),
+        ),
+      );
+    });
+  });
+
+  group('a model with two outputs', () {
+    late DirectoryGoldenBundle multiIo;
+
+    setUpAll(() async {
+      multiIo = await DirectoryGoldenBundle.open(_multiIoPath);
+    });
+
+    test('both outputs are measured, not just the first', () async {
+      final model = await FakeModel.replaying(multiIo.manifest, multiIo);
+
+      await expectParity(model, goldens: multiIo);
+
+      final reports = await measureParity(model, goldens: multiIo);
+      expect(reports, hasLength(4));
+      for (final report in reports) {
+        expect(
+          report.tensors.map((t) => t.tensorName),
+          ['primary', 'auxiliary'],
+          reason:
+              'a loop that stopped after the first output would pass '
+              'this model while measuring half of it',
+        );
+      }
+    });
+
+    test('drift in the second output is reported as the second', () async {
+      // The whole point of the fixture: both outputs are float32[1, 3], so
+      // nothing about the shapes distinguishes them and a report that named
+      // "primary" here would be indistinguishable from a correct one to
+      // anything except this assertion.
+      final model = await FakeModel.replaying(
+        multiIo.manifest,
+        multiIo,
+        perturb: (id, outputs) {
+          if (id == 'case-1') outputs[1].asFloat32List()[2] += 0.5;
+        },
+      );
+
+      await expectLater(
+        expectParity(model, goldens: multiIo),
+        throwsA(
+          isA<TestFailure>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains('1 of 4 golden cases'),
+              contains('FAIL  parity/case-1'),
+              contains('output "auxiliary"'),
+              contains('worst at [2]'),
+              isNot(contains('output "primary"')),
             ),
           ),
         ),

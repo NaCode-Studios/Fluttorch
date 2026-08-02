@@ -9,6 +9,20 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
 
 ## [Unreleased]
 
+### Added
+
+- A model with two inputs and two outputs is exported, run and measured.
+  Everything committed until now returned a single tensor, so the code that
+  keeps a second one in the right order had been read and never executed: the
+  gate's loop over the outputs had only ever taken one trip, and the generated
+  API had never emitted an index other than zero. `testdata/multi_io` is the
+  fixture that runs it, through all three engines, because each shim converts
+  its own runtime's output list into ours and one of them being right says
+  nothing about the other two. Its two inputs share a shape and so do its two
+  outputs, which is the point rather than a convenience: a pair that differed
+  in shape would be caught on the way past by the shape check, and the fixture
+  would then pass for a reason that has nothing to do with ordering.
+
 ### Fixed
 
 - A failure inside the runtime is reported as one. `RuntimeExecutionException`
