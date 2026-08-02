@@ -178,6 +178,56 @@ final class DTypeUnsupportedException extends FluttorchException {
       'would not be the model that was measured.';
 }
 
+/// The runtime failed while doing something, and the bundle is not at fault.
+///
+/// The manifest parsed, the artifact matched its hash, and in most cases the
+/// model had already loaded. What failed is the engine, and the useful next
+/// step is the engine's own issue tracker rather than a re-export.
+///
+/// [status] is the shim's own code and [code] is whatever the runtime reported
+/// underneath it. Both are carried as numbers rather than flattened into the
+/// message, because those are the two values that mean something to somebody
+/// reading the runtime's source.
+///
+/// This exists because the shims raised [ManifestFormatException] here, whose
+/// remedy is to re-export. On a bundle that is provably correct that advice
+/// sends a reader to rebuild something that was never wrong, and the real cause
+/// stays unexamined.
+final class RuntimeExecutionException extends FluttorchException {
+  RuntimeExecutionException({
+    required this.runtime,
+    required this.operation,
+    required this.status,
+    this.code,
+    this.detail,
+  }) : super(
+         'the $runtime runtime failed while $operation: status $status'
+         '${code == null ? "" : ", error $code"}'
+         '${detail == null ? "" : ", $detail"}',
+       );
+
+  /// The engine that failed: `executorch`, `onnx` or `litert`.
+  final String runtime;
+
+  /// What was being done, in the caller's terms: "running inference".
+  final String operation;
+
+  /// The shim's status code.
+  final int status;
+
+  /// The runtime's own error code, where it reported one.
+  final int? code;
+
+  /// Whatever text the runtime attached.
+  final String? detail;
+
+  @override
+  String get remedy =>
+      'Take status $status${code == null ? "" : " and error $code"} to the '
+      '$runtime runtime, not to the export. The manifest parsed and the hash '
+      'matched, so re-exporting would rebuild something that is already right.';
+}
+
 /// The device cannot do what was asked, and no fallback applies.
 ///
 /// Carries what was requested and what is actually available, because the

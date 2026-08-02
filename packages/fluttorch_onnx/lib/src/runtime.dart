@@ -21,7 +21,7 @@ final class OnnxRuntime implements FluttorchRuntime {
 
   /// Opens the ONNX shim by the name each platform gives it.
   factory OnnxRuntime.open([String? path]) =>
-      OnnxRuntime(NativeExecuTorchBindings.open(path));
+      OnnxRuntime(NativeExecuTorchBindings.open(path, 'onnx'));
 
   @override
   Future<List<RuntimeCapabilities>> capabilities() async => [

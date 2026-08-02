@@ -33,6 +33,13 @@ void main() {
       backend: 'coreml',
       capability: 'activation taps',
     ),
+    RuntimeExecutionException(
+      runtime: 'executorch',
+      operation: 'running inference',
+      status: 6,
+      code: 16,
+      detail: 'forward failed: ExecuTorch error 16',
+    ),
   ];
 
   group('M30 · every failure says what to do about it', () {
@@ -130,8 +137,43 @@ void main() {
         DTypeUnsupportedException() => 'device cannot carry it',
         BackendUnavailableException() => 'no such backend',
         CapabilityUnavailableException() => 'backend cannot do it',
+        RuntimeExecutionException() => 'the engine failed',
       };
-      expect(all.map(name).toSet(), hasLength(8));
+      expect(all.map(name).toSet(), hasLength(9));
+    });
+  });
+
+  group('M30 · a runtime failure is not a manifest failure', () {
+    test('it names the engine and carries its code as a number', () {
+      // Both were flattened into a sentence before, and the shims raised
+      // ManifestFormatException, whose remedy is to re-export. On a bundle that
+      // parsed and matched its hash that advice rebuilds something already
+      // right and leaves the real cause unexamined.
+      final e = RuntimeExecutionException(
+        runtime: 'litert',
+        operation: 'running inference',
+        status: 6,
+        code: 18,
+      );
+      expect(e.message, contains('litert'));
+      expect(e.code, 18);
+      expect(e.status, 6);
+      expect(e.remedy, contains('litert'));
+      // It does mention re-exporting, to say it is the wrong move. What matters
+      // is that it sends the reader to the runtime, which is the difference
+      // from the exception this replaced.
+      expect(e.remedy, contains('not to the export'));
+      expect(e, isNot(isA<ManifestFormatException>()));
+    });
+
+    test('a runtime that reported no code says so by absence', () {
+      final e = RuntimeExecutionException(
+        runtime: 'onnx',
+        operation: 'loading the artifact',
+        status: 3,
+      );
+      expect(e.code, isNull);
+      expect(e.message, isNot(contains('error null')));
     });
   });
 

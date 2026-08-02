@@ -9,6 +9,16 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
 
 ## [Unreleased]
 
+### Fixed
+
+- A failure inside the runtime is reported as one. `RuntimeExecutionException`
+  names the engine and carries the shim's status and the runtime's own error
+  code as numbers rather than flattened into a sentence, because those are what
+  a reader takes to that runtime's source. The three shims raised
+  `ManifestFormatException` here, whose remedy is to re-export: on a bundle
+  whose manifest parsed and whose hash matched, that rebuilds something already
+  correct and leaves the cause unexamined. VoltaCast is what made it obvious.
+
 ## [0.7.0] - 2026-08-02
 
 ### Added

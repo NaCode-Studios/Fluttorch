@@ -139,7 +139,7 @@ abstract final class FtStatus {
 /// boundary: an exception crossing FFI terminates the process, and a model that
 /// fails to load is an ordinary Tuesday.
 final class NativeExecuTorchBindings implements ExecuTorchBindings {
-  NativeExecuTorchBindings(this._lib)
+  NativeExecuTorchBindings(this._lib, {this.runtimeName = 'executorch'})
     : _backends = _lib.lookupFunction<_BackendsNative, _Backends>(
         'ft_backends',
       ),
@@ -160,14 +160,24 @@ final class NativeExecuTorchBindings implements ExecuTorchBindings {
       );
 
   /// Opens the library by the name each platform gives it.
-  factory NativeExecuTorchBindings.open([String? path]) =>
-      NativeExecuTorchBindings(
-        path != null
-            ? DynamicLibrary.open(path)
-            : (Platform.isIOS || Platform.isMacOS)
-            ? DynamicLibrary.process()
-            : DynamicLibrary.open('libfluttorch_executorch.so'),
-      );
+  factory NativeExecuTorchBindings.open([
+    String? path,
+    String runtimeName = 'executorch',
+  ]) => NativeExecuTorchBindings(
+    path != null
+        ? DynamicLibrary.open(path)
+        : (Platform.isIOS || Platform.isMacOS)
+        ? DynamicLibrary.process()
+        : DynamicLibrary.open('libfluttorch_$runtimeName.so'),
+    runtimeName: runtimeName,
+  );
+
+  /// Which engine is behind this ABI, so a failure can name it.
+  ///
+  /// The three shims share this client, because what they share is the C ABI
+  /// rather than an implementation. Without this a runtime failure could only
+  /// say "the native call failed", which is true of all three.
+  final String runtimeName;
 
   // ignore: unused_field
   final DynamicLibrary _lib;
@@ -265,10 +275,23 @@ final class NativeExecuTorchBindings implements ExecuTorchBindings {
 
   void _check(int status, String what) {
     if (status == FtStatus.ok) return;
-    final detail = _lastError();
-    throw ManifestFormatException(
-      'native call failed while $what: status $status'
-      '${detail == nullptr ? "" : ", ${detail.toDartString()}"}',
+    final raw = _lastError();
+    final detail = raw == nullptr ? null : raw.toDartString();
+    // The shim formats the engine's own code into its message, so it is pulled
+    // back out rather than left inside a string. That number is what a reader
+    // takes to the runtime's source, and searching a sentence for it is work
+    // this can do once.
+    final code = detail == null
+        ? null
+        : int.tryParse(
+            RegExp(r'error (\d+)').firstMatch(detail)?.group(1) ?? '',
+          );
+    throw RuntimeExecutionException(
+      runtime: runtimeName,
+      operation: what,
+      status: status,
+      code: code,
+      detail: detail,
     );
   }
 }

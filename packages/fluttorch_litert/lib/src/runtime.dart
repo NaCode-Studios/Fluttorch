@@ -21,7 +21,7 @@ final class LiteRtRuntime implements FluttorchRuntime {
 
   /// Opens the ONNX shim by the name each platform gives it.
   factory LiteRtRuntime.open([String? path]) =>
-      LiteRtRuntime(NativeExecuTorchBindings.open(path));
+      LiteRtRuntime(NativeExecuTorchBindings.open(path, 'litert'));
 
   @override
   Future<List<RuntimeCapabilities>> capabilities() async => [
