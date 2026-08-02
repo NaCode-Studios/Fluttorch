@@ -4,6 +4,13 @@ This file records what changed in `fluttorch_gen`, the `build_runner` builder.
 The whole project's record is in
 [the repository changelog](https://github.com/NaCode-Studios/Fluttorch/blob/main/CHANGELOG.md).
 
+## 0.7.0
+
+- `resize` and `center_crop` are generated from the layout the manifest
+  records, as a `fromSource` constructor rather than an in-place pass. The
+  generated crop rounds the way torchvision does, which is not the way Dart
+  does, and on an odd margin the difference was one row.
+
 ## 0.6.0
 
 - `resize` and `center_crop` are generated, from the layout the manifest now

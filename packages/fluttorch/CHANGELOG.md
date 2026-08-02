@@ -4,6 +4,13 @@ This file records what changed in `fluttorch`, the contract package. The whole
 project's record, covering every package and the Python exporter together, is in
 [the repository changelog](https://github.com/NaCode-Studios/Fluttorch/blob/main/CHANGELOG.md).
 
+## 0.7.0
+
+- `TensorLayout`, so a spec can say which axes are spatial, and
+  `DTypeUnsupportedException`, which separates a backend with no kernel for an
+  element type from a caller reading bytes as the wrong one. Every exception
+  carries a `remedy` beside its `message`.
+
 ## 0.6.0
 
 - `TensorSpec` can record a layout, `nchw` or `nhwc`, so a consumer knows which

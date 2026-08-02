@@ -7,7 +7,7 @@ import 'dart:typed_data';
 import 'package:test/test.dart';
 import 'package:typed_api_example/vision.fluttorch.dart';
 
-/// M31 · the spatial steps are generated, and they agree with training.
+/// The spatial steps are generated, and they agree with training.
 ///
 /// A resize and a crop are the two preprocessing steps whose correctness cannot
 /// be argued from reading the code. Bilinear has a half-pixel convention,
@@ -41,7 +41,7 @@ void main() {
     );
   }
 
-  group('M31 · a source frame becomes the tensor the model declared', () {
+  group('a source frame becomes the tensor the model declared', () {
     test('the manifest records which axes are spatial', () {
       // Without this the generator refuses, and it is right to: the same bytes
       // read as NCHW and as NHWC are two different pictures.

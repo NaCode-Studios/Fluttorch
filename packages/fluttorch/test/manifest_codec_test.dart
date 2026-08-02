@@ -282,7 +282,7 @@ void main() {
 }
 
 void _layoutTests() {
-  group('M31 · the layout, which says which axes are spatial', () {
+  group('The layout, which says which axes are spatial', () {
     String withLayout(Object? layout, {List<int>? shape}) => jsonEncode({
       'schema_version': 1,
       'name': 'vision',

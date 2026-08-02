@@ -4,6 +4,10 @@ This file records what changed in `fluttorch_test`, the parity gate. The whole
 project's record is in
 [the repository changelog](https://github.com/NaCode-Studios/Fluttorch/blob/main/CHANGELOG.md).
 
+## 0.7.0
+
+- No API change. Released with the rest of the project.
+
 ## 0.6.0
 
 - No API change. Released with the rest of the project.

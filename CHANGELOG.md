@@ -9,10 +9,12 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-02
+
 ### Added
 
 - A tensor spec can record its layout, `nchw` or `nhwc`, and `resize` and
-  `center_crop` are generated from it (M31). Both were understood and refused
+  `center_crop` are generated from it. Both were understood and refused
   before, because performing either means knowing which axes are spatial and
   nothing recorded it, which stopped every image model at the door. Absence is
   not a default: a spec that says nothing is not a spec that says NCHW, and
@@ -615,7 +617,8 @@ user can invoke yet, which is what `0.0.1` says that a minor would overstate.
   needs neither `torch` nor `executorch`.
 - 109 tests: 90 Dart across three packages, 19 Python.
 
-[Unreleased]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.3.0...v0.4.0
