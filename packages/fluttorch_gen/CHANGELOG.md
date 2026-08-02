@@ -4,6 +4,13 @@ This file records what changed in `fluttorch_gen`, the `build_runner` builder.
 The whole project's record is in
 [the repository changelog](https://github.com/NaCode-Studios/Fluttorch/blob/main/CHANGELOG.md).
 
+## 1.0.0
+
+- The emitter is exercised on a model with more than one output. Nothing had
+  ever asked it for a second one, so the accessor that reads `_tensors[1]` had
+  been written and never run.
+- No change to what it emits for a manifest it already handled.
+
 ## 0.7.0
 
 - `resize` and `center_crop` are generated from the layout the manifest

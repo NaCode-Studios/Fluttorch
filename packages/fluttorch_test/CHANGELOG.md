@@ -4,6 +4,20 @@ This file records what changed in `fluttorch_test`, the parity gate. The whole
 project's record is in
 [the repository changelog](https://github.com/NaCode-Studios/Fluttorch/blob/main/CHANGELOG.md).
 
+## 1.0.0
+
+- `Tolerance.startingPointFor` is now `Tolerance.boundFor`, and every bound
+  except `int4-weight-only` comes from a measurement rather than a defensible
+  guess. Each entry cites the models it was measured against, and
+  `tool/measure_tolerances.dart` in the ExecuTorch package reproduces them.
+- `int8-dynamic` widens from `5e-2` to `1e-1`, because it measured `4.1e-2` and
+  a factor of 1.2 is a coincidence rather than a margin. `int8-static` and
+  `int4-weight-only` widen to keep the recipes ordered.
+- `ParityMatrix.precisionOf`, so a report can order its columns by what the
+  artifact was lowered at rather than by the backend's name.
+- `DirectoryGoldenBundle.parts()` reads the files a manifest declares beside it,
+  and `bundleRoot` says where they were read from.
+
 ## 0.7.0
 
 - No API change. Released with the rest of the project.
