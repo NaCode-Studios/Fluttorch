@@ -50,6 +50,14 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
   softmax, exported once per backend because an ExecuTorch artifact is lowered
   for a delegate and handing one to another measures which file was loaded.
 
+- A stability policy, in [`STABILITY.md`](STABILITY.md). Four surfaces here carry a compatibility
+  promise and only one of them is a Dart API, so each gets its own rule: the manifest is a document
+  two implementations parse in two languages, the C header is an ABI three bindings implement and
+  consumers link as a prebuilt library, the generated Dart is code that gets committed and diffed by
+  somebody else's CI, and the tolerances decide whether a build is green. A deprecated API survives at
+  least two minor releases, which is ExecuTorch's own policy rather than a number chosen here: a
+  binding cannot outlive a symbol the engine below it has removed.
+
 ### Changed
 
 - Every tolerance is measured rather than guessed, and says on what.

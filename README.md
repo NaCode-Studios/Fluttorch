@@ -208,6 +208,13 @@ PYTHONPATH=python/fluttorch_export pytest python/fluttorch_export/tests
 The manifest suite needs neither `torch` nor `executorch`. The export half does, and
 [`examples/spike/`](examples/spike/) shows the whole path end to end.
 
+## Stability
+
+See [STABILITY.md](STABILITY.md). Four things here carry a compatibility promise and only one of them
+is a Dart API: the manifest is a document two implementations parse, the C header is an ABI three
+bindings implement, the generated Dart gets committed by consumers, and the tolerances decide whether
+a build is green. A deprecated API survives at least two minor releases.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Three rules shape everything else: the core stays
