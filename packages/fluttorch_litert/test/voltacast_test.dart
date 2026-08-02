@@ -91,7 +91,11 @@ void main() {
       final v = (await model.run(inputs)).single.asFloat32List();
       for (var h = 0; h < 24; h++) {
         expect(v[h * 3], lessThanOrEqualTo(v[h * 3 + 1]), reason: 'hour $h');
-        expect(v[h * 3 + 1], lessThanOrEqualTo(v[h * 3 + 2]), reason: 'hour $h');
+        expect(
+          v[h * 3 + 1],
+          lessThanOrEqualTo(v[h * 3 + 2]),
+          reason: 'hour $h',
+        );
       }
     });
 
