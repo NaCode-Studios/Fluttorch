@@ -15,7 +15,7 @@ PASS  parity/case-0
       output "y"  max |Δ| 2.98e-8  ok
 ```
 
-Against `Tolerance.startingPointFor(null)`, whose absolute bound is `1e-5`. The observed drift is
+Against `Tolerance.boundFor(null)`, whose absolute bound is `1e-5`. The observed drift is
 three orders of magnitude inside it, which is what a full-precision export through XNNPACK should
 look like: the graph was re-ordered, not re-quantized.
 
