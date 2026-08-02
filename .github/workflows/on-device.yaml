@@ -59,6 +59,17 @@ jobs:
           # them.
           key: executorch-${{ env.EXECUTORCH_REF }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/fluttorch_executorch/tool/build_native.sh') }}
 
+      # ExecuTorch's kernel codegen is Python, and CMake runs it as the last
+      # target of the build. Its four generators import yaml, and three of them
+      # import torchgen, which is not a package of its own: it ships inside the
+      # torch wheel. Without them the build reaches 100 per cent and dies on the
+      # final generated file, which puts the error an hour and a quarter after
+      # the mistake that caused it. Pinned to the torch upstream's own installer
+      # pins for this ref, because the codegen and the runtime are one version.
+      - name: What the kernel codegen imports
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: pip install torch==2.12.0 pyyaml
+
       - name: Build ExecuTorch
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
