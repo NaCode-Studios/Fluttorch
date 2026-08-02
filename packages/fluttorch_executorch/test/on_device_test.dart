@@ -549,10 +549,16 @@ void main() {
   // Error 0x10. Through portable kernels: Error 0x12, InvalidArgument. Both at
   // execution, both after a lowering that reported success.
   //
-  // What this does test is the half that works, which is not nothing: the
-  // bundle is well-formed, the binding loads a 3.5 MB artifact, and the
-  // manifest describes a model with two inputs, which nothing else in this
-  // repository does.
+  // The model itself is fine, and the proof is that LiteRT runs it. The same
+  // weights and the same golden windows go through the same gate in
+  // packages/fluttorch_litert/test/voltacast_test.dart and agree with the
+  // notebook to within float32 rounding. That is what the runtime layer was
+  // built for, and this is the first time it has been worth something rather
+  // than merely demonstrated.
+  //
+  // What this group still tests is the half that works here: the bundle is
+  // well-formed, the binding loads a 3.5 MB artifact, and the manifest
+  // describes a model with two inputs.
   group('M29 · VoltaCast, as far as it currently goes', () {
     late DirectoryGoldenBundle goldens;
     late LoadedModel model;
