@@ -2,6 +2,7 @@
 library;
 
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:fluttorch/fluttorch.dart';
 import 'package:fluttorch_onnx/fluttorch_onnx.dart';
@@ -23,6 +24,7 @@ final _library = File(
 );
 final _export = Directory('../../testdata/onnx');
 final _multiIo = Directory('../../testdata/multi_io_onnx');
+final _voltacast = Directory('../../testdata/voltacast_onnx');
 
 void main() {
   if (!_library.existsSync() || !_export.existsSync()) {
@@ -171,5 +173,65 @@ void main() {
       expect(straight[0].asFloat32List(), isNot(crossed[0].asFloat32List()));
       expect(straight[1].asFloat32List(), isNot(crossed[1].asFloat32List()));
     });
+  });
+
+  // VoltaCast is the model this whole path exists for. torch.onnx puts 3.4 MB
+  // of its weights in a file beside the graph, leaving 506 kB of structure in
+  // the artifact, and until now the export refused rather than write a bundle
+  // whose hash covered the shape of a model and none of its numbers.
+  group('VoltaCast, whose weights live beside its graph', () {
+    late DirectoryGoldenBundle bundle;
+    late Uint8List artifact;
+    late Map<String, Uint8List> parts;
+    late LoadedModel voltacast;
+
+    setUpAll(() async {
+      bundle = await DirectoryGoldenBundle.open(
+        '${_voltacast.path}/voltacast.fluttorch.json',
+      );
+      artifact = await File('${_voltacast.path}/voltacast.onnx').readAsBytes();
+      parts = await bundle.parts();
+      voltacast = await runtime.load(
+        artifact: artifact,
+        manifest: bundle.manifest,
+        backend: 'cpu',
+        parts: parts,
+      );
+    });
+
+    tearDownAll(() async => voltacast.dispose());
+
+    test('the graph is the small half, and the weights are the other', () {
+      expect(bundle.manifest.parts, hasLength(1));
+      expect(bundle.manifest.parts.single.size, greaterThan(artifact.length));
+    });
+
+    test('the goldens hold, on a model whose numbers arrived separately', () {
+      // The exit criterion. Loading was never the hard part: a graph without
+      // its weights loads too, declares the same shapes, and answers. What
+      // says the weights actually arrived is the forecast matching references
+      // captured from the source model before any of this was split up.
+      return expectParity(voltacast, goldens: bundle);
+    });
+
+    test(
+      'without the part it refuses rather than running on structure',
+      () async {
+        await expectLater(
+          runtime.load(
+            artifact: artifact,
+            manifest: bundle.manifest,
+            backend: 'cpu',
+          ),
+          throwsA(
+            isA<BundlePartMissingException>().having(
+              (e) => e.missing,
+              'missing',
+              ['voltacast.onnx.data'],
+            ),
+          ),
+        );
+      },
+    );
   });
 }

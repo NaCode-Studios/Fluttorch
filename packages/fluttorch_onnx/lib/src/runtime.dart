@@ -35,6 +35,7 @@ final class OnnxRuntime implements FluttorchRuntime {
     required ModelManifest manifest,
     String? backend,
     bool deterministic = false,
+    Map<String, Uint8List> parts = const {},
   }) async {
     // A .pte handed to ONNX Runtime passes the weight hash, because the hash was
     // computed over whichever artifact was written, and then fails inside the
@@ -46,7 +47,7 @@ final class OnnxRuntime implements FluttorchRuntime {
         available: const ['onnx'],
       );
     }
-    verifyArtifact(artifact: artifact, manifest: manifest);
+    verifyArtifact(artifact: artifact, manifest: manifest, parts: parts);
 
     if (backend != null && !_bindings.backends().contains(backend)) {
       throw BackendUnavailableException(
@@ -59,6 +60,7 @@ final class OnnxRuntime implements FluttorchRuntime {
       artifact: artifact,
       backend: backend,
       deterministic: deterministic,
+      parts: parts,
     );
 
     final caps = native.capabilities;

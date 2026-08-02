@@ -31,6 +31,7 @@ final class FakeRuntime implements FluttorchRuntime {
     required ModelManifest manifest,
     String? backend,
     bool deterministic = false,
+    Map<String, Uint8List> parts = const {},
   }) async {
     loadedArtifact = artifact;
     requestedBackend = backend;

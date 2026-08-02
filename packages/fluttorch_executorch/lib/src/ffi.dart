@@ -28,6 +28,20 @@ final class FtCapabilities extends Struct {
   external int dtypes;
 }
 
+/// One file an artifact references and cannot be loaded without.
+///
+/// [name] is a reference rather than a path. The artifact carries the string
+/// internally and the engine resolves it against what it is handed, so a part
+/// renamed on the way is a part the graph can no longer find.
+final class FtPart extends Struct {
+  external Pointer<Utf8> name;
+
+  external Pointer<Uint8> data;
+
+  @Int64()
+  external int length;
+}
+
 final class FtTensor extends Struct {
   external Pointer<Uint8> data;
 
@@ -53,17 +67,21 @@ typedef _CapabilitiesNative =
     Int32 Function(Pointer<Utf8>, Pointer<FtCapabilities>);
 typedef _Capabilities = int Function(Pointer<Utf8>, Pointer<FtCapabilities>);
 
-typedef _LoadNative =
+typedef _LoadPartsNative =
     Int32 Function(
       Pointer<Uint8>,
       Int64,
+      Pointer<FtPart>,
+      Int32,
       Pointer<Utf8>,
       Int32,
       Pointer<Pointer<FtModel>>,
     );
-typedef _Load =
+typedef _LoadParts =
     int Function(
       Pointer<Uint8>,
+      int,
+      Pointer<FtPart>,
       int,
       Pointer<Utf8>,
       int,
@@ -146,7 +164,9 @@ final class NativeExecuTorchBindings implements ExecuTorchBindings {
       _capabilities = _lib.lookupFunction<_CapabilitiesNative, _Capabilities>(
         'ft_capabilities',
       ),
-      _load = _lib.lookupFunction<_LoadNative, _Load>('ft_load'),
+      _loadParts = _lib.lookupFunction<_LoadPartsNative, _LoadParts>(
+        'ft_load_parts',
+      ),
       _modelBackend = _lib.lookupFunction<_ModelBackendNative, _ModelBackend>(
         'ft_model_backend',
       ),
@@ -183,7 +203,7 @@ final class NativeExecuTorchBindings implements ExecuTorchBindings {
   final DynamicLibrary _lib;
   final _Backends _backends;
   final _Capabilities _capabilities;
-  final _Load _load;
+  final _LoadParts _loadParts;
   final _ModelBackend _modelBackend;
   final _Run _run;
   final _RunWithTaps _runWithTaps;
@@ -232,26 +252,41 @@ final class NativeExecuTorchBindings implements ExecuTorchBindings {
     required Uint8List artifact,
     String? backend,
     bool deterministic = false,
+    Map<String, Uint8List> parts = const {},
   }) {
     // The artifact is borrowed for the duration of the call, so it is copied
     // into native memory rather than pinned: Dart offers no way to pin a
     // typed list, and a moving collector under a pointer is a crash nobody can
-    // reproduce.
+    // reproduce. The parts are copied for the same reason.
     final bytes = malloc<Uint8>(artifact.length);
     final handle = malloc<Pointer<FtModel>>();
     try {
       bytes.asTypedList(artifact.length).setAll(0, artifact);
-      final status = using(
-        (arena) => _load(
+      final status = using((arena) {
+        final entries = parts.entries.toList();
+        final array = entries.isEmpty
+            ? nullptr as Pointer<FtPart>
+            : arena<FtPart>(entries.length);
+        for (var i = 0; i < entries.length; i++) {
+          final data = arena<Uint8>(entries[i].value.length);
+          data.asTypedList(entries[i].value.length).setAll(0, entries[i].value);
+          array[i]
+            ..name = entries[i].key.toNativeUtf8(allocator: arena)
+            ..data = data
+            ..length = entries[i].value.length;
+        }
+        return _loadParts(
           bytes,
           artifact.length,
+          array,
+          entries.length,
           backend == null
               ? nullptr
               : backend.toNativeUtf8(allocator: arena).cast(),
           deterministic ? 1 : 0,
           handle,
-        ),
-      );
+        );
+      });
       if (status == FtStatus.backendUnavailable) {
         throw BackendUnavailableException(
           requested: backend ?? '(preferred)',
@@ -261,7 +296,14 @@ final class NativeExecuTorchBindings implements ExecuTorchBindings {
       if (status == FtStatus.capabilityUnavailable) {
         throw CapabilityUnavailableException(
           backend: backend ?? '(preferred)',
-          capability: deterministic ? 'deterministic execution' : 'this load',
+          capability: parts.isNotEmpty
+              // Named as the thing that was actually refused. A binding that
+              // cannot resolve external data and one that cannot promise a
+              // reduction order are different absences with different answers.
+              ? 'weights that live beside the graph'
+              : deterministic
+              ? 'deterministic execution'
+              : 'this load',
         );
       }
       _check(status, 'loading the artifact');

@@ -23,10 +23,18 @@ abstract interface class ExecuTorchBindings {
   /// [deterministic] asks for repeatable execution and fails rather than
   /// silently running without it, because a tolerance chosen against a promise
   /// that was quietly dropped is a tolerance measuring noise.
+  ///
+  /// [parts] carries the files the artifact references and cannot be loaded
+  /// without, keyed by the name the artifact references them by. Empty for a
+  /// model whose weights fit inside its graph, which is nearly all of them. A
+  /// binding that cannot resolve external data throws
+  /// [CapabilityUnavailableException] rather than loading the graph and leaving
+  /// the weights behind, which would produce a session that answers.
   NativeModel load({
     required Uint8List artifact,
     String? backend,
     bool deterministic = false,
+    Map<String, Uint8List> parts = const {},
   });
 }
 

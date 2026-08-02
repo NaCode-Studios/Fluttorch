@@ -127,6 +127,7 @@ final class IsolateExecuTorchRuntime implements FluttorchRuntime {
     required ModelManifest manifest,
     String? backend,
     bool deterministic = false,
+    Map<String, Uint8List> parts = const {},
   }) async {
     // The manifest crosses as the document it already is. Sending the object
     // would work and would also make this the one place where a manifest exists

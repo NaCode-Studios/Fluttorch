@@ -23,6 +23,25 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
   in shape would be caught on the way past by the shape check, and the fixture
   would then pass for a reason that has nothing to do with ordering.
 
+- An artifact can be more than one file, and the hash still covers the numbers.
+  Above a size the exporting toolchain decides for itself, the weights leave the
+  graph and land beside it: `torch.onnx` leaves 506 kB of structure in VoltaCast's
+  artifact and puts 3.4 MB of weights next to it. That was refused, because
+  `weight_hash` was taken over the artifact and would have covered the shape of a
+  model and none of its numbers. A manifest now names the parts and the hash
+  covers them, each contributing its name and its length as well as its bytes,
+  and `ft_load_parts` hands the bytes to the engine under the name the graph
+  references rather than asking it to find a file it has no path to. ONNX Runtime
+  carries them; ExecuTorch and LiteRT refuse and say why, because a graph loaded
+  without the weights it references still parses, still declares every shape the
+  manifest promised, and still answers.
+
+  `schema_version` rises to 2, and only for a manifest that actually carries
+  parts. Every field added before this one was additive, meaning a reader that
+  did not know it carried on doing what it did before; this one is not, and the
+  version is the only thing standing between an older reader and a model with no
+  numbers in it. Nothing that already shipped needs re-exporting.
+
 ### Fixed
 
 - A failure inside the runtime is reported as one. `RuntimeExecutionException`
