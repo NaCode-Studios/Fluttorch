@@ -1,6 +1,6 @@
 name: fluttorch_executorch
 description: ExecuTorch backend for Fluttorch. Runs exported PyTorch models on device behind the runtime-agnostic Fluttorch interface.
-version: 0.6.0
+version: 0.7.0
 repository: https://github.com/NaCode-Studios/Fluttorch
 publish_to: none
 
@@ -14,9 +14,9 @@ dependencies:
   # hand-rolling them in a package that exists to be trusted about buffers is a
   # poor trade against a package the Dart team maintains.
   ffi: ^2.1.0
-  fluttorch: ^0.6.0
+  fluttorch: ^0.7.0
 
 dev_dependencies:
-  fluttorch_test: ^0.6.0
+  fluttorch_test: ^0.7.0
   lints: ^6.0.0
   test: ^1.25.0

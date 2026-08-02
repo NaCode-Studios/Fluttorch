@@ -2,7 +2,7 @@ name: fluttorch_onnx
 description: >-
   Runs models exported by fluttorch-export through ONNX Runtime, measured by the
   same parity gate that measures every other backend.
-version: 0.6.0
+version: 0.7.0
 repository: https://github.com/NaCode-Studios/Fluttorch
 issue_tracker: https://github.com/NaCode-Studios/Fluttorch/issues
 publish_to: none
@@ -13,14 +13,14 @@ environment:
 
 dependencies:
   ffi: ^2.1.0
-  fluttorch: ^0.6.0
+  fluttorch: ^0.7.0
   # For the binding to the C ABI, not for ExecuTorch. The ABI is one contract
   # and two runtimes implement it, so the Dart side that speaks it is shared
   # rather than written twice. Its name still says ExecuTorch, which is a thing
   # to fix rather than a thing to duplicate around.
-  fluttorch_executorch: ^0.6.0
+  fluttorch_executorch: ^0.7.0
 
 dev_dependencies:
-  fluttorch_test: ^0.6.0
+  fluttorch_test: ^0.7.0
   lints: ^6.0.0
   test: ^1.25.0

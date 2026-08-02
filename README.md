@@ -54,16 +54,16 @@ the [concepts](https://nacode-studios.github.io/Fluttorch/concepts.html), a
 [what each failure means](https://nacode-studios.github.io/Fluttorch/errors.html) including the one
 that is deliberately not a failure at all.
 
-> **Status — `0.6.0`, early development.** The loop from `torch.export` to a typed Dart API to a
-> parity gate runs on hardware, and it reaches a phone. The binding cross-compiles for Android arm64
-> and for iOS, and a model quantized to `int8-dynamic` runs on an Android device with drift identical
-> to the laptop's in every digit reported. Three engines answer to one C ABI, ExecuTorch, ONNX Runtime
-> and LiteRT, so the manifest, the goldens and the gate stay unchanged when the engine changes, and a
-> bundle exported for one of them is refused by the other two rather than half-loaded. Inference runs
-> on a worker isolate instead of the thread that draws.
-> What it does not do yet is prove any of that on a model that can go wrong. Every number here comes
-> from a two-layer network, the tolerances are starting points rather than measurements, and
-> `fluttorch_executorch` stays unpublished because pub.dev cannot carry the native half.
+> **Status — `0.7.0`, early development.** The loop from `torch.export` to a typed Dart API to a
+> parity gate runs on hardware, reaches a phone, and now carries a model that can go wrong. VoltaCast
+> is a seq2seq Transformer forecasting Italian electricity demand a day ahead, trained on eleven years
+> of real data, and it holds its goldens to `5.96e-7` through LiteRT. Getting there used the runtime
+> layer for the first time rather than only demonstrating it: ExecuTorch lowers that model and fails
+> to execute it, so the same bundle went to a different engine, unchanged.
+> What it still does not have is measured tolerances. Every bound in the table is a defensible
+> starting point rather than a number taken from a population of models, which matters because that
+> bound is what decides whether a build is green. `fluttorch_executorch` stays unpublished because
+> pub.dev cannot carry the native half.
 > The [board](https://github.com/orgs/NaCode-Studios/projects/6) is the plan of record and tracks it
 > milestone by milestone. Until `1.0`, minor versions may break.
 
@@ -174,12 +174,17 @@ the runtime-agnostic claim into something measured, and the manifest now records
 executes an artifact so the wrong one refuses it instead of failing somewhere inside a session.
 Inference runs on a worker isolate rather than on the thread that draws.
 
-**Next.** A documentation site, an example that is a real application rather than a test, and an
-error taxonomy that says what a reader should do about each failure.
+**Shipped (`0.7.0`).** Tier 8. A tensor spec records which axes are spatial, so `resize` and
+`center_crop` are generated instead of refused, and the generated crop rounds the way torchvision
+does rather than the way Dart does, which on an odd margin was one row of the picture. Five failures
+carry five distinct messages and each says what to do about it, with drift deliberately not among
+them because it is a measurement rather than an error. VoltaCast is exported, measured and documented.
+The documentation is a [site](https://nacode-studios.github.io/Fluttorch/).
 
-**Later.** The evidence this rests on. The tolerances are starting points and should be measured; the
-matrix should carry a model large enough for the backends to disagree; and coverage stops at one
-input and one output.
+**Next.** Stabilisation. An API freeze and a deprecation policy, tolerances replaced by measured ones,
+and benchmarks, because parity is proven and cost is not.
+
+**Later.** `1.0`, and after it the targets Flutter has that this runtime does not yet reach.
 
 The [board](https://github.com/orgs/NaCode-Studios/projects/6) carries the milestone plan and its
 exit criteria, and every tier is a [milestone](https://github.com/NaCode-Studios/Fluttorch/milestones)
