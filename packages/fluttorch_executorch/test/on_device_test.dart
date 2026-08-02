@@ -29,6 +29,7 @@ final _quantized = Directory('../../testdata/quantized');
 final _coreml = Directory('../../testdata/coreml');
 final _taps = Directory('../../testdata/taps');
 final _mps = Directory('../../testdata/mps');
+final _voltacast = Directory('../../testdata/voltacast');
 
 void main() {
   if (!_library.existsSync() || !_quantized.existsSync()) {
@@ -530,4 +531,66 @@ void main() {
       );
     });
   });
+
+  // ── M29 · a model that can go wrong ────────────────────────────────────────
+  //
+  // Everything else here measures a two-layer network. This is VoltaCast: a
+  // seq2seq Transformer forecasting Italian electricity demand, three encoder
+  // layers over a week of hourly history and two decoder layers cross-attending
+  // to it, trained on eleven years of real data.
+  //
+  // It exports. It lowers. It does not execute, and that is recorded here
+  // rather than left out, because a suite that quietly drops the one model
+  // large enough to disagree is a suite claiming coverage it does not have.
+  //
+  // The failure is upstream and the evidence is that the same artifacts fail
+  // identically under ExecuTorch's own Python runtime, which never touches this
+  // binding. Through XNNPACK: "Failed to resize output tensor for XNNExecutor",
+  // Error 0x10. Through portable kernels: Error 0x12, InvalidArgument. Both at
+  // execution, both after a lowering that reported success.
+  //
+  // What this does test is the half that works, which is not nothing: the
+  // bundle is well-formed, the binding loads a 3.5 MB artifact, and the
+  // manifest describes a model with two inputs, which nothing else in this
+  // repository does.
+  group('M29 · VoltaCast, as far as it currently goes', () {
+    late DirectoryGoldenBundle goldens;
+    late LoadedModel model;
+
+    setUpAll(() async {
+      goldens = await DirectoryGoldenBundle.open(
+        '${_voltacast.path}/voltacast.fluttorch.json',
+      );
+      model = await ExecuTorchRuntime(bindings).load(
+        artifact: await File('${_voltacast.path}/voltacast.pte').readAsBytes(),
+        manifest: goldens.manifest,
+      );
+    });
+
+    tearDownAll(() async => model.dispose());
+
+    test('the binding loads it, and it is a real model', () {
+      expect(model.manifest.inputs.map((s) => s.name), ['past', 'future']);
+      expect(model.manifest.inputNamed('past').shape, [1, 168, 13]);
+      expect(model.manifest.inputNamed('future').shape, [1, 24, 12]);
+      expect(model.manifest.outputNamed('quantiles').shape, [1, 24, 3]);
+      expect(model.manifest.labels, ['p10', 'p50', 'p90']);
+      expect(goldens.cases, hasLength(4));
+    });
+
+    test('running it fails inside ExecuTorch, not at this seam', () async {
+      // Pinned so the day upstream fixes it, this test fails and somebody
+      // deletes it. A limitation recorded as a passing test is a limitation
+      // that gets forgotten; recorded as a failing expectation, it announces
+      // its own repair.
+      await expectLater(
+        expectParity(model, goldens: goldens),
+        throwsA(anything),
+        reason:
+            'if this now passes, ExecuTorch executes the model and this whole '
+            'group should become the parity gate it was written to be',
+      );
+    });
+  });
+
 }

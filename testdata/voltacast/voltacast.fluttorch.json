@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "name": "voltacast",
+  "weight_hash": "sha256:b3353f5f736500daceaa75a5794d4bf2df87acba72c0d570945196b12bc2eb93",
+  "inputs": [
+    {
+      "name": "past",
+      "dtype": "float32",
+      "shape": [
+        1,
+        168,
+        13
+      ]
+    },
+    {
+      "name": "future",
+      "dtype": "float32",
+      "shape": [
+        1,
+        24,
+        12
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "name": "quantiles",
+      "dtype": "float32",
+      "shape": [
+        1,
+        24,
+        3
+      ]
+    }
+  ],
+  "labels": [
+    "p10",
+    "p50",
+    "p90"
+  ],
+  "goldens": [
+    {
+      "id": "case-0",
+      "inputs": [
+        "0/in/past.bin",
+        "0/in/future.bin"
+      ],
+      "outputs": [
+        "0/out/quantiles.bin"
+      ]
+    },
+    {
+      "id": "case-1",
+      "inputs": [
+        "1/in/past.bin",
+        "1/in/future.bin"
+      ],
+      "outputs": [
+        "1/out/quantiles.bin"
+      ]
+    },
+    {
+      "id": "case-2",
+      "inputs": [
+        "2/in/past.bin",
+        "2/in/future.bin"
+      ],
+      "outputs": [
+        "2/out/quantiles.bin"
+      ]
+    },
+    {
+      "id": "case-3",
+      "inputs": [
+        "3/in/past.bin",
+        "3/in/future.bin"
+      ],
+      "outputs": [
+        "3/out/quantiles.bin"
+      ]
+    }
+  ]
+}
