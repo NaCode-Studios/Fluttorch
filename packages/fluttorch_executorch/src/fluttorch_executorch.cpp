@@ -282,6 +282,27 @@ ft_status_t ft_capabilities(const char* backend, ft_capabilities_t* out) {
   return FT_OK;
 }
 
+ft_status_t ft_load_parts(const uint8_t* artifact, int64_t length,
+                          const ft_part_t* parts, int32_t part_count,
+                          const char* backend, int32_t deterministic,
+                          ft_model_t** out_model) {
+  if (part_count > 0) {
+    // Refused rather than ignored. A .pte carries its weights, so a bundle that
+    // arrives here with parts is one lowered for another engine, and loading
+    // the artifact alone would either fail to parse or, worse, parse.
+    //
+    // ExecuTorch does have a shape for this, the .ptd data file, and nothing
+    // in this toolchain writes one yet. When something does, this is where it
+    // is answered rather than where it is discovered.
+    return fail(FT_ERROR_CAPABILITY_UNAVAILABLE,
+                "this binding carries an ExecuTorch artifact, which holds its "
+                "own weights; a bundle whose weights live beside the graph "
+                "needs the runtime it was exported for");
+  }
+  (void)parts;
+  return ft_load(artifact, length, backend, deterministic, out_model);
+}
+
 ft_status_t ft_load(const uint8_t* artifact, int64_t length, const char* backend,
                     int32_t deterministic, ft_model_t** out_model) {
   if (artifact == nullptr || out_model == nullptr) {
