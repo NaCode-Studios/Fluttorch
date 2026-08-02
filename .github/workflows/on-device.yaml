@@ -8,16 +8,18 @@ name: On device
 # the gate says by how much. Nothing below is checkable on a runner that only
 # has Dart.
 #
-# Not on every pull request, and not because it is optional. Building ExecuTorch
-# is the better part of an hour and several gigabytes, so a gate that shape on
-# every push is one somebody eventually routes around, and a gate people route
-# around is worse than one that runs weekly and is believed. The on-device suite
-# skips by name everywhere else, which is what keeps the fast jobs honest about
-# what they did not cover.
+# Dispatch only, and not because it is optional. One complete run measured an
+# hour and a quarter on a three-core macOS runner, which is by a wide margin the
+# largest single block of compute this repository asks for. It ran weekly until
+# the first complete run made that number real, and a timer measures the
+# calendar rather than what changed: nothing about this answer moves in a week
+# where the native half did not. So it runs when somebody wants the evidence,
+# which in practice is before a release and after the binding changes.
+#
+# The on-device suite skips by name everywhere else, which is what keeps the
+# fast jobs honest about what they did not cover.
 
 on:
-  schedule:
-    - cron: "0 5 * * 1"
   workflow_dispatch:
 
 # Pinned, because the cache key is only meaningful against one version and
