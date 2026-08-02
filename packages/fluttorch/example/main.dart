@@ -33,8 +33,10 @@ void main() {
     }),
   );
 
-  print('${manifest.name}: ${manifest.inputs.length} in, '
-      '${manifest.outputs.length} out');
+  print(
+    '${manifest.name}: ${manifest.inputs.length} in, '
+    '${manifest.outputs.length} out',
+  );
 
   final spec = manifest.inputNamed('features');
   print('features is ${spec.dtype.wireName}${spec.shape}');
@@ -43,10 +45,7 @@ void main() {
   // is a shape error discovered inside a delegate, where the message names
   // nothing a reader recognises.
   final values = Float32List.fromList([1, 2, 3, 4]);
-  final tensor = Tensor.view(
-    spec: spec,
-    bytes: values.buffer.asUint8List(),
-  );
+  final tensor = Tensor.view(spec: spec, bytes: values.buffer.asUint8List());
   print('accepted ${tensor.shape}, ${tensor.bytes.length} bytes');
 
   try {

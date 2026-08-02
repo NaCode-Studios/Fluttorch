@@ -19,11 +19,15 @@ void main() {
   final half = Tolerance.startingPointFor(null, precision: 'float16')!;
 
   print('full precision : rtol ${full.maxRelative}, atol ${full.maxAbsolute}');
-  print('int8-dynamic   : rtol ${quantized.maxRelative}, '
-      'atol ${quantized.maxAbsolute}');
+  print(
+    'int8-dynamic   : rtol ${quantized.maxRelative}, '
+    'atol ${quantized.maxAbsolute}',
+  );
   print('float16        : rtol ${half.maxRelative}, atol ${half.maxAbsolute}');
-  print('an unknown recipe has no bound: '
-      '${Tolerance.startingPointFor('int3-imaginary')}');
+  print(
+    'an unknown recipe has no bound: '
+    '${Tolerance.startingPointFor('int3-imaginary')}',
+  );
 
   // Measuring one tensor against its reference. `measureParity` does this over
   // a whole golden bundle and a loaded model; the arithmetic underneath is the
@@ -41,8 +45,10 @@ void main() {
   }
 
   print('worst absolute $worstAbsolute, worst relative $worstRelative');
-  print('inside the int8 bound: '
-      '${worstAbsolute <= quantized.maxAbsolute + quantized.maxRelative * 3}');
+  print(
+    'inside the int8 bound: '
+    '${worstAbsolute <= quantized.maxAbsolute + quantized.maxRelative * 3}',
+  );
 
   // Drift is a measurement, not an error. A quantized model that moves by two
   // per cent has not failed, it has quantized. `expectParity` is what turns a

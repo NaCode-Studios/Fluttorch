@@ -108,11 +108,8 @@ void main() {
       // The size is the caller's to get right and the only one this can check.
       // Reading past the end of a short buffer would produce a picture.
       expect(
-        () => VisionImage.fromSource(
-          Float32List(3 * 4 * 4),
-          height: 5,
-          width: 5,
-        ),
+        () =>
+            VisionImage.fromSource(Float32List(3 * 4 * 4), height: 5, width: 5),
         throwsA(isA<Exception>()),
       );
     });

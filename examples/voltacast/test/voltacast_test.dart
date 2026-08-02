@@ -61,7 +61,11 @@ void main() {
       final q = read('goldens/0/out/quantiles.bin');
       for (var h = 0; h < 24; h++) {
         expect(q[h * 3], lessThanOrEqualTo(q[h * 3 + 1]), reason: 'hour $h');
-        expect(q[h * 3 + 1], lessThanOrEqualTo(q[h * 3 + 2]), reason: 'hour $h');
+        expect(
+          q[h * 3 + 1],
+          lessThanOrEqualTo(q[h * 3 + 2]),
+          reason: 'hour $h',
+        );
       }
     });
 

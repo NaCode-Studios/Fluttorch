@@ -279,4 +279,4 @@ class TestLayout:
         # Rather than returning a default, which is the failure the field
         # exists to prevent: a resize down the wrong axes returns a picture.
         with pytest.raises(ManifestError, match="declares no layout"):
-            TensorSpec("features", "float32", (1, 4)).spatial_axes
+            _ = TensorSpec("features", "float32", (1, 4)).spatial_axes

@@ -274,7 +274,9 @@ void _spatialFactory(
     ..writeln("        tensorName: '${spec.name}',")
     ..writeln('      );')
     ..writeln('    }')
-    ..writeln('    // ${layout.wireName}: the axis order the manifest declared.')
+    ..writeln(
+      '    // ${layout.wireName}: the axis order the manifest declared.',
+    )
     ..writeln('    int at(int n, int c, int y, int x, int h, int w) =>')
     ..writeln('        $at;')
     ..writeln('    var src = values;')

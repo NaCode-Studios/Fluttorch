@@ -85,9 +85,7 @@ def preprocess(source: torch.Tensor) -> torch.Tensor:
     resize and an affine normalize commute in exact arithmetic, which is exactly
     why the order has to be pinned rather than assumed to be harmless.
     """
-    resized = F.interpolate(
-        source, size=(RESIZE_H, RESIZE_W), mode="bilinear", align_corners=False
-    )
+    resized = F.interpolate(source, size=(RESIZE_H, RESIZE_W), mode="bilinear", align_corners=False)
     top = round((RESIZE_H - MODEL_H) / 2)
     left = round((RESIZE_W - MODEL_W) / 2)
     cropped = resized[:, :, top : top + MODEL_H, left : left + MODEL_W]
