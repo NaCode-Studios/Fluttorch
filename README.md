@@ -60,10 +60,12 @@ that is deliberately not a failure at all.
 > of real data, and it holds its goldens to `5.96e-7` through LiteRT. Getting there used the runtime
 > layer for the first time rather than only demonstrating it: ExecuTorch lowers that model and fails
 > to execute it, so the same bundle went to a different engine, unchanged.
-> What it still does not have is measured tolerances. Every bound in the table is a defensible
-> starting point rather than a number taken from a population of models, which matters because that
-> bound is what decides whether a build is green. `fluttorch_executorch` stays unpublished because
-> pub.dev cannot carry the native half.
+> The tolerances are now measured rather than assumed, and the measurement said something worth
+> knowing: the two-layer model drifts up to eight times further than the convolutional one, and it is
+> the simpler network. Its outputs land near `9.4` while the other ends in a softmax, and a relative
+> error is measured against the output while the rounding happened on intermediates. One bound is
+> still unmeasured and says so, because nothing here exports int4.
+> `fluttorch_executorch` stays unpublished because pub.dev cannot carry the native half.
 > The [board](https://github.com/orgs/NaCode-Studios/projects/6) is the plan of record and tracks it
 > milestone by milestone. Until `1.0`, minor versions may break.
 
@@ -93,12 +95,12 @@ report always says which backend produced it.
 
 ```yaml
 dependencies:
-  fluttorch: ^0.4.0
+  fluttorch: ^0.7.0
 
 dev_dependencies:
   build_runner: ^2.4.0
-  fluttorch_gen: ^0.4.0
-  fluttorch_test: ^0.4.0
+  fluttorch_gen: ^0.7.0
+  fluttorch_test: ^0.7.0
 ```
 
 The generator and the gate are `dev_dependencies`: neither runs in a shipped app, and an app that
@@ -111,8 +113,8 @@ than a library:
 pip install 'git+https://github.com/NaCode-Studios/Fluttorch.git#subdirectory=python/fluttorch_export'
 ```
 
-Nothing here executes a model yet. `fluttorch_executorch` is in the repository and unpublished,
-because everything it implements currently throws.
+The three bindings execute models and are in the repository unpublished, because pub.dev cannot carry
+the native half. Building one is `tool/build_native.sh` in its package.
 
 A published archive carries a [SLSA build provenance](https://slsa.dev/) attestation when the
 release workflow was able to produce one, so you can check that what you resolved was built here
@@ -220,6 +222,9 @@ a build is green. A deprecated API survives at least two minor releases.
 See [CONTRIBUTING.md](CONTRIBUTING.md). Three rules shape everything else: the core stays
 runtime-agnostic, the manifest is the single source of truth, and backend capabilities are reported
 rather than assumed.
+
+Measured cost of generating, loading and running a model is in
+[`docs/benchmarks.md`](docs/benchmarks.md), with the tool that reproduces it.
 
 Brand assets and design tokens live in [`docs/brand/`](docs/brand/).
 

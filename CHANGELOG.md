@@ -58,6 +58,18 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
   least two minor releases, which is ExecuTorch's own policy rather than a number chosen here: a
   binding cannot outlive a symbol the engine below it has removed.
 
+- Published benchmarks, in [`docs/benchmarks.md`](docs/benchmarks.md), with the tool that reproduces
+  them. Codegen is about a millisecond per manifest and flat across models that differ by three orders
+  of magnitude in weight size, so it is not why a build is slow. Load tracks artifact size at roughly
+  6.5 ms per megabyte, which is 22 ms once per process for VoltaCast. `runInto` saves four to seven
+  microseconds over `run` and the saving does not scale with the model, which inverts the advice you
+  might expect: it is worth reaching for on a small model called at frame rate and close to irrelevant
+  on a convolutional one.
+
+  Resident memory was measured and is not published. The delta over a thousand runs came back negative
+  as often as positive, so it records when the collector ran rather than what the loop allocated, and
+  a column of noise is worse than a missing one.
+
 ### Changed
 
 - Every tolerance is measured rather than guessed, and says on what.
