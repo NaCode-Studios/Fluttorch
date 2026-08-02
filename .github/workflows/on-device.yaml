@@ -22,9 +22,14 @@ on:
 
 # Pinned, because the cache key is only meaningful against one version and
 # because every upstream friction this repository has hit was version-specific.
+#
+# The directory has to be called `executorch`, with no leading dot. Its own
+# CMakeLists refuses to configure under any other name, which is upstream issue
+# 6475 and not a preference. A dot was the obvious way to keep the clone out of
+# Dart's way, and it is the one name that cannot work.
 env:
   EXECUTORCH_REF: v1.3.0
-  EXECUTORCH_DIR: ${{ github.workspace }}/.executorch
+  EXECUTORCH_DIR: ${{ github.workspace }}/executorch
 
 jobs:
   matrix:

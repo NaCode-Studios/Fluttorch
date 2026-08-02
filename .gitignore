@@ -49,6 +49,10 @@ __pycache__/
 # several gigabytes and belong to the machine, not to the repository.
 .venv/
 
+# An ExecuTorch checkout, which the on-device workflow clones into the root
+# because upstream refuses to configure under any other directory name.
+/executorch/
+
 # The cross-compiled binding, written here by tool/build_native.sh --android.
 # 61 MB of build output that every machine reproduces from the same script, so
 # committing it would put a binary in the history that nobody can diff.
