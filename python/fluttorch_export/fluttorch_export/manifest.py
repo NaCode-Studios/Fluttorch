@@ -13,13 +13,29 @@ contract is indistinguishable from a measurement.
 from __future__ import annotations
 
 import decimal
+import hashlib
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
 #: Schema version this module writes. Raise it only when a reader that does not
 #: understand the change would misread the document, not for additive fields.
 SCHEMA_VERSION = 1
+
+#: What a manifest declares once it carries parts beside the artifact.
+#:
+#: Every other field added to this schema has been additive, meaning a reader
+#: that did not know it carried on doing what it did before. ``parts`` is the
+#: first that is not: a reader without it loads the artifact alone, and for a
+#: model whose weights live beside the graph that is a graph with no numbers in
+#: it, which loads and runs and answers nonsense. The decoder ignores keys it
+#: does not recognise, deliberately, so the version is the only thing standing
+#: between an old reader and that.
+#:
+#: It rises only for a manifest that actually has parts. Every export written so
+#: far stays version 1 and nothing has to be re-exported to stay readable.
+SCHEMA_VERSION_WITH_PARTS = 2
 
 #: Marks a dimension whose extent is decided at run time.
 DYNAMIC_DIM = -1
@@ -247,6 +263,67 @@ class GoldenCase:
 
 
 @dataclass(frozen=True, slots=True)
+class BundlePart:
+    """One file of an artifact that is more than one file.
+
+    Above a size the exporting toolchain decides on its own, the weights leave
+    the graph and land beside it. The graph then references them by file name,
+    and a loader handed only the graph has the structure and none of the
+    numbers.
+
+    ``name`` is that reference, not a path. It is the string the artifact itself
+    carries, so the loader has to hand the bytes back under exactly it for the
+    session to resolve them, and a part renamed on disk is a part the graph can
+    no longer find.
+    """
+
+    name: str
+    size: int
+    hash: str
+
+    def __post_init__(self) -> None:
+        if not self.name:
+            raise ManifestError("a bundle part with no name cannot be resolved")
+        if "/" in self.name or "\\" in self.name:
+            # A part is named, not located. Letting a separator through would
+            # make a manifest able to say "read this file over here", which is
+            # a bundle that reads outside itself.
+            raise ManifestError(
+                f"part {self.name!r} looks like a path; a part is named relative "
+                "to the manifest and cannot point outside the bundle"
+            )
+        if self.size < 0:
+            raise ManifestError(f"part {self.name!r} declares a negative size")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"name": self.name, "size": self.size, "hash": self.hash}
+
+
+def bundle_digest(artifact: bytes, parts: Sequence[tuple[str, bytes]] = ()) -> str:
+    """The hash that covers a whole bundle, artifact and parts together.
+
+    With no parts this is the digest of the artifact and nothing else, which is
+    what every manifest written so far declares. That is deliberate: a
+    single-file bundle keeps the number it already had, so adding this function
+    re-exports nothing.
+
+    With parts, each one contributes its name and its length as well as its
+    bytes. Concatenation alone would be ambiguous, since two different splits of
+    the same bytes would hash the same, and a hash whose meaning depends on how
+    you happened to divide it is not a commitment to anything.
+    """
+    digest = hashlib.sha256()
+    digest.update(artifact)
+    for name, data in parts:
+        encoded = name.encode("utf-8")
+        digest.update(len(encoded).to_bytes(8, "little"))
+        digest.update(encoded)
+        digest.update(len(data).to_bytes(8, "little"))
+        digest.update(data)
+    return "sha256:" + digest.hexdigest()
+
+
+@dataclass(frozen=True, slots=True)
 class ModelManifest:
     """The contract emitted alongside an exported model."""
 
@@ -305,9 +382,35 @@ class ModelManifest:
     still compare the activations it was given against the goldens, and simply
     has no way to ask the device for its own.
     """
+    parts: tuple[BundlePart, ...] = ()
+    """Files the artifact references and cannot be loaded without.
+
+    Empty for every model whose weights fit inside its graph, which is most of
+    them, and that is the case the rest of this contract was written for.
+
+    Not additive, unlike everything above it: see ``SCHEMA_VERSION_WITH_PARTS``
+    for why a manifest carrying these declares a version an older reader
+    refuses. ``weight_hash`` covers the parts as well as the artifact, so the
+    pairing this contract rests on still covers the numbers and not merely the
+    structure.
+    """
     schema_version: int = SCHEMA_VERSION
 
     def __post_init__(self) -> None:
+        # Raised here rather than left to the caller because a manifest that
+        # carries parts and claims version 1 is precisely the document this
+        # version exists to prevent, and one built by hand is as dangerous as
+        # one built by the exporter.
+        if self.parts and self.schema_version < SCHEMA_VERSION_WITH_PARTS:
+            object.__setattr__(self, "schema_version", SCHEMA_VERSION_WITH_PARTS)
+        seen: set[str] = set()
+        for part in self.parts:
+            if part.name in seen:
+                raise ManifestError(
+                    f"{self.name!r} declares the part {part.name!r} twice, and "
+                    "the graph references it once"
+                )
+            seen.add(part.name)
         if not self.inputs:
             raise ManifestError(f"{self.name!r} declares no inputs")
         if not self.outputs:
@@ -386,6 +489,8 @@ class ModelManifest:
             "name": self.name,
             "weight_hash": self.weight_hash,
         }
+        if self.parts:
+            d["parts"] = [p.to_dict() for p in self.parts]
         if self.runtime is not None:
             d["runtime"] = self.runtime
         if self.quantization is not None:
