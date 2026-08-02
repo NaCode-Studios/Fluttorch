@@ -56,10 +56,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.EXECUTORCH_DIR }}
-          # The build script is in the key: it decides which delegates are
-          # linked, so a change to it has to invalidate a tree built without
-          # them.
-          key: executorch-${{ env.EXECUTORCH_REF }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/fluttorch_executorch/tool/build_native.sh') }}
+          # Both files that decide what the tree contains are in the key. The
+          # build script decides which delegates are linked; this workflow holds
+          # the cmake configure, which decides what was compiled in the first
+          # place. Hashing only the script meant a changed configure restored a
+          # tree built under the old one, and the tests would fail against a
+          # runtime nobody could see the flags for.
+          key: executorch-${{ env.EXECUTORCH_REF }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/fluttorch_executorch/tool/build_native.sh', '.github/workflows/on-device.yaml') }}
 
       # ExecuTorch's kernel codegen is Python, and CMake runs it as the last
       # target of the build. Its four generators import yaml, and three of them
@@ -72,6 +75,12 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true'
         run: pip install torch==2.12.0 pyyaml
 
+      # DEVTOOLS is what compiles the tracer hooks that activation taps read
+      # through. They are #ifdef'd inside the executor, so a shim built against
+      # a runtime without it collects nothing and reports every layer absent,
+      # and the suite says so: the first complete run failed one assertion, that
+      # this build can read intermediates. A job that exercises three of the
+      # four hooks this binding exists for is not the job this is meant to be.
       - name: Build ExecuTorch
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
@@ -81,6 +90,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DEXECUTORCH_BUILD_XNNPACK=ON \
             -DEXECUTORCH_BUILD_MPS=ON \
+            -DEXECUTORCH_BUILD_DEVTOOLS=ON \
             -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
             -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \
             -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
