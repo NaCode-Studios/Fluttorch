@@ -55,6 +55,40 @@ final class ArtifactMismatchException extends FluttorchException {
       'hand to agree with the other hides the mismatch instead of fixing it.';
 }
 
+/// A bundle arrived without a file its artifact cannot be loaded without.
+///
+/// Above a size the exporting toolchain decides for itself, the weights leave
+/// the graph and land beside it. Both files then travel together or neither is
+/// usable, and the one that goes missing is the one carrying the numbers: the
+/// graph on its own still parses, still declares the right shapes, and still
+/// runs, which is why this is refused loudly rather than discovered in the
+/// outputs.
+///
+/// Usually an asset bundle or a deployment step that copied the artifact and
+/// not what sits next to it.
+final class BundlePartMissingException extends FluttorchException {
+  BundlePartMissingException({required this.missing, required this.model})
+    : super(
+        missing.length == 1
+            ? 'the bundle for "$model" is missing "${missing.single}", which '
+                  'the artifact references and cannot be loaded without'
+            : 'the bundle for "$model" is missing ${missing.length} files its '
+                  'artifact references and cannot be loaded without: '
+                  '${missing.join(", ")}',
+      );
+
+  /// Names of the parts that did not arrive, as the manifest declares them.
+  final List<String> missing;
+
+  /// Model the bundle belongs to, so the message names one bundle among many.
+  final String model;
+
+  @override
+  String get remedy =>
+      'Ship every file the export wrote beside the manifest, not the artifact '
+      'alone. The manifest lists them under "parts".';
+}
+
 /// The manifest could not be read.
 ///
 /// [field] names where the decoder stopped, so a hand-edited manifest can be

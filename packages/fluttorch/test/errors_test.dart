@@ -27,6 +27,10 @@ void main() {
       backend: 'xnnpack',
       supported: const [DType.float32, DType.int8],
     ),
+    BundlePartMissingException(
+      missing: const ['voltacast.onnx.data'],
+      model: 'voltacast',
+    ),
     BackendUnavailableException(requested: 'qnn', available: const ['xnnpack']),
     BackendUnavailableException(requested: 'qnn', available: const []),
     CapabilityUnavailableException(
@@ -138,8 +142,9 @@ void main() {
         BackendUnavailableException() => 'no such backend',
         CapabilityUnavailableException() => 'backend cannot do it',
         RuntimeExecutionException() => 'the engine failed',
+        BundlePartMissingException() => 'half a bundle',
       };
-      expect(all.map(name).toSet(), hasLength(9));
+      expect(all.map(name).toSet(), hasLength(10));
     });
   });
 

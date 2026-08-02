@@ -74,6 +74,7 @@ CHECKPOINT = HERE / "checkpoint" / "transformer.pt"
 DATA = HERE / "checkpoint" / "italy_load_weather.parquet"
 OUT_EXECUTORCH = ROOT / "testdata" / "voltacast"
 OUT_LITERT = ROOT / "testdata" / "voltacast_litert"
+OUT_ONNX = ROOT / "testdata" / "voltacast_onnx"
 
 #: Golden windows, taken from the test split so they are hours the model never
 #: trained on. Four of them, at midnight, which is the origin a day-ahead
@@ -142,6 +143,7 @@ def main() -> int:
     for out_dir, runtime, backend in (
         (OUT_EXECUTORCH, "executorch", "portable"),
         (OUT_LITERT, "litert", "cpu"),
+        (OUT_ONNX, "onnx", "cpu"),
     ):
         out_dir.mkdir(parents=True, exist_ok=True)
         result = export_model(

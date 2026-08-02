@@ -62,6 +62,7 @@ abstract final class ManifestCodec {
       activationHandles: json.containsKey('activation_handles')
           ? _intList(json, 'activation_handles')
           : const [],
+      parts: _parts(json),
     );
   }
 
@@ -81,6 +82,11 @@ abstract final class ManifestCodec {
     'schema_version': m.schemaVersion,
     'name': m.name,
     'weight_hash': m.weightHash,
+    if (m.parts.isNotEmpty)
+      'parts': [
+        for (final p in m.parts)
+          {'name': p.name, 'size': p.size, 'hash': p.hash},
+      ],
     if (m.runtime != null) 'runtime': m.runtime,
     if (m.quantization != null) 'quantization': m.quantization,
     if (m.precision != null) 'precision': m.precision,
@@ -284,6 +290,55 @@ abstract final class ManifestCodec {
     if (g.description != null) 'description': g.description,
     if (g.activationKeys.isNotEmpty) 'activations': g.activationKeys,
   };
+
+  static List<BundlePart> _parts(Map<String, Object?> json) {
+    if (!json.containsKey('parts')) return const [];
+    final list = _list(json, 'parts');
+    final seen = <String>{};
+    final parts = <BundlePart>[];
+    for (var i = 0; i < list.length; i++) {
+      final path = 'parts[$i]';
+      final map = _object(list[i], path);
+      final name = _string(map, 'name', path: path);
+      if (name.isEmpty) {
+        throw ManifestFormatException(
+          'a part with no name cannot be resolved',
+          field: '$path.name',
+        );
+      }
+      // A part is named, not located. A separator would let a manifest say
+      // "read this file over there", which is a bundle that reads outside
+      // itself, and the name has to match what the graph references anyway.
+      if (name.contains('/') || name.contains(r'\')) {
+        throw ManifestFormatException(
+          'part "$name" looks like a path; a part is named relative to the '
+          'manifest and cannot point outside the bundle',
+          field: '$path.name',
+        );
+      }
+      if (!seen.add(name)) {
+        throw ManifestFormatException(
+          'duplicate part "$name"; the graph references it once',
+          field: '$path.name',
+        );
+      }
+      final size = _int(map, 'size', path: path);
+      if (size < 0) {
+        throw ManifestFormatException(
+          'part "$name" declares a negative size',
+          field: '$path.size',
+        );
+      }
+      parts.add(
+        BundlePart(
+          name: name,
+          size: size,
+          hash: _string(map, 'hash', path: path),
+        ),
+      );
+    }
+    return List.unmodifiable(parts);
+  }
 
   static List<GoldenCase> _goldens(Map<String, Object?> json) {
     if (!json.containsKey('goldens')) return const [];

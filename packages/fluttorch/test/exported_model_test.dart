@@ -205,7 +205,19 @@ void main() {
 
     test('nothing in it is beyond this build', () {
       expect(manifest.hasUnknownPreprocessing, isFalse);
-      expect(manifest.schemaVersion, ModelManifest.currentSchemaVersion);
+      expect(
+        manifest.schemaVersion,
+        lessThanOrEqualTo(ModelManifest.currentSchemaVersion),
+      );
+    });
+
+    test('a model whose weights fit in its graph still declares version 1', () {
+      // The version rose to 2 when parts arrived, and rose only for manifests
+      // that carry them. If this export ever starts declaring 2, every reader
+      // built before parts existed stops being able to load a model that has
+      // nothing to do with them.
+      expect(manifest.parts, isEmpty);
+      expect(manifest.schemaVersion, ModelManifest.schemaVersionWithoutParts);
     });
   });
 }
