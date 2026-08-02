@@ -14,8 +14,22 @@ Needs `flatc` on PATH, which an ExecuTorch checkout builds:
 ## What this example proves, and where it stops
 
 It proves the thing the project exists for on a model that can go wrong: a
-Transformer with softmax attention, 340 nodes, lowered to XNNPACK, measured
-against references captured from the source model on real windows.
+Transformer with softmax attention, 340 nodes, measured against references
+captured from the source model on real windows.
+
+It writes two bundles, and the reason is the point of the whole runtime layer.
+ExecuTorch lowers this model and then fails to execute it, identically under its
+own Python runtime, so the failure is upstream rather than at this seam. LiteRT
+carries the same model, from the same weights and the same golden windows,
+through the same gate, and agrees with the notebook to within float32 rounding.
+One manifest, one set of references, two engines, and the one that works is the
+one the example is measured on.
+
+ONNX Runtime is the third and is refused for a reason of ours rather than
+theirs: torch.onnx moves 3.4 MB of weights into a sidecar beside the graph, and
+this toolchain refuses that bundle rather than writing one whose hash covers the
+graph and not the numbers. That is issue 65, and VoltaCast is exactly the size
+of model that triggers it.
 
 It stops at the model boundary, and that is a statement rather than an omission.
 VoltaCast's preprocessing is not expressible in the manifest and should not be.
@@ -58,7 +72,8 @@ from model import (  # noqa: E402
 
 CHECKPOINT = HERE / "checkpoint" / "transformer.pt"
 DATA = HERE / "checkpoint" / "italy_load_weather.parquet"
-OUT = ROOT / "testdata" / "voltacast"
+OUT_EXECUTORCH = ROOT / "testdata" / "voltacast"
+OUT_LITERT = ROOT / "testdata" / "voltacast_litert"
 
 #: Golden windows, taken from the test split so they are hours the model never
 #: trained on. Four of them, at midnight, which is the origin a day-ahead
@@ -107,11 +122,9 @@ def main() -> int:
     # construction: the checkpoint's validation window ends 2025-06-30 and this
     # data runs past it.
     hours = features.index.tz_convert("Europe/Rome").hour.to_numpy()
-    origins = [
-        t
-        for t in range(len(features) - horizon, context, -1)
-        if hours[t] == 0
-    ][:GOLDEN_WINDOWS]
+    origins = [t for t in range(len(features) - horizon, context, -1) if hours[t] == 0][
+        :GOLDEN_WINDOWS
+    ]
     origins.reverse()
     print(f"golden origins: {[str(features.index[t]) for t in origins]}")
 
@@ -123,24 +136,34 @@ def main() -> int:
 
     example = window(origins[0])
 
-    OUT.mkdir(parents=True, exist_ok=True)
-    result = export_model(
-        model=model,
-        example_inputs=example,
-        name="voltacast",
-        backend="portable",
-        out_dir=OUT,
-        input_names=["past", "future"],
-        output_names=["quantiles"],
-        golden_inputs=[window(t) for t in origins],
-        labels=[f"p{int(q * 100)}" for q in cfg["model"]["quantiles"]],
-    )
+    goldens = [window(t) for t in origins]
+    labels = [f"p{int(q * 100)}" for q in cfg["model"]["quantiles"]]
 
-    m = result.manifest
-    print(f"artifact  {result.artifact.name}, {result.artifact.stat().st_size} bytes")
-    print(f"inputs    {[(s.name, s.shape) for s in m.inputs]}")
-    print(f"outputs   {[(s.name, s.shape) for s in m.outputs]}")
-    print(f"goldens   {len(m.goldens)}")
+    for out_dir, runtime, backend in (
+        (OUT_EXECUTORCH, "executorch", "portable"),
+        (OUT_LITERT, "litert", "cpu"),
+    ):
+        out_dir.mkdir(parents=True, exist_ok=True)
+        result = export_model(
+            model=model,
+            example_inputs=example,
+            name="voltacast",
+            runtime=runtime,
+            backend=backend,
+            out_dir=out_dir,
+            input_names=["past", "future"],
+            output_names=["quantiles"],
+            golden_inputs=goldens,
+            labels=labels,
+        )
+        m = result.manifest
+        print(
+            f"{runtime:11} {result.artifact.name}, "
+            f"{result.artifact.stat().st_size} bytes, "
+            f"{len(m.goldens)} goldens, "
+            f"in {[(s.name, s.shape) for s in m.inputs]}, "
+            f"out {[(s.name, s.shape) for s in m.outputs]}"
+        )
 
     # What the forecast means in megawatts, which the tensors do not say. The
     # model works in the scaler's units, and the scaler belongs to the training
@@ -150,8 +173,7 @@ def main() -> int:
         q = model(*example)[0]
     mw = scaler.inverse(q.numpy())
     print(
-        f"first window, hour 0: P10 {mw[0, 0]:.0f} MW, "
-        f"P50 {mw[0, 1]:.0f} MW, P90 {mw[0, 2]:.0f} MW"
+        f"first window, hour 0: P10 {mw[0, 0]:.0f} MW, P50 {mw[0, 1]:.0f} MW, P90 {mw[0, 2]:.0f} MW"
     )
     return 0
 
