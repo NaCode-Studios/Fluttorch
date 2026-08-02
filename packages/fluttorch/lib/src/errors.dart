@@ -2,18 +2,33 @@ import 'dtype.dart';
 
 /// Base class for every failure Fluttorch raises deliberately.
 ///
-/// The five ways a model can fail to run are genuinely different problems with
+/// The ways a model can fail to run are genuinely different problems with
 /// different fixes: the artifact is wrong, the manifest is unreadable, the
 /// buffer does not match its declaration, the device cannot do it, or the
 /// numbers drifted. Sharing one exception type would collapse that distinction
 /// at exactly the moment a caller needs it.
+///
+/// `docs/errors.md` is the taxonomy: five failures, what each one means, and
+/// which of them is deliberately not an exception at all.
+///
+/// Every member carries a [remedy]. Saying what went wrong and not what to do
+/// about it is the difference between a message a reader can act on and one
+/// they can only paste into a search engine, and making it a field rather than
+/// a convention means a subclass cannot quietly stop having one.
 sealed class FluttorchException implements Exception {
   const FluttorchException(this.message);
 
+  /// What went wrong, in the terms of this library's contract.
   final String message;
 
+  /// What the reader should do about it. One sentence, imperative.
+  ///
+  /// Distinct from [message] on purpose: the cause and the fix are different
+  /// sentences, and a caller showing this to a user usually wants only this one.
+  String get remedy;
+
   @override
-  String toString() => '$runtimeType: $message';
+  String toString() => '$runtimeType: $message\n  → $remedy';
 }
 
 /// The artifact does not match the manifest it was loaded with.
@@ -33,6 +48,11 @@ final class ArtifactMismatchException extends FluttorchException {
 
   final String expectedHash;
   final String actualHash;
+
+  @override
+  String get remedy =>
+      'Re-export the model and its manifest together. Editing either one by '
+      'hand to agree with the other hides the mismatch instead of fixing it.';
 }
 
 /// The manifest could not be read.
@@ -46,9 +66,16 @@ final class ManifestFormatException extends FluttorchException {
   final String? field;
 
   @override
+  String get remedy => field == null
+      ? 'Re-export rather than repairing the document: a manifest is written '
+            'by the exporter and read here, and nothing else should author one.'
+      : 'Look at $field in the manifest, and re-export rather than editing it '
+            'in place.';
+
+  @override
   String toString() => field == null
-      ? 'ManifestFormatException: $message'
-      : 'ManifestFormatException at $field: $message';
+      ? 'ManifestFormatException: $message\n  → $remedy'
+      : 'ManifestFormatException at $field: $message\n  → $remedy';
 }
 
 /// The manifest was written by a newer schema than this build understands.
@@ -65,6 +92,11 @@ final class ManifestVersionException extends FluttorchException {
 
   final int found;
   final int supported;
+
+  @override
+  String get remedy =>
+      'Upgrade the fluttorch package to one that understands schema $found. '
+      'The manifest is not wrong, this reader is older than it.';
 }
 
 /// A buffer does not satisfy the tensor spec it was handed with.
@@ -75,9 +107,14 @@ final class TensorShapeException extends FluttorchException {
   final String? tensorName;
 
   @override
+  String get remedy =>
+      'Size the buffer from the spec the export declared rather than from the '
+      'shape the data happens to have.';
+
+  @override
   String toString() => tensorName == null
-      ? 'TensorShapeException: $message'
-      : 'TensorShapeException on "$tensorName": $message';
+      ? 'TensorShapeException: $message\n  → $remedy'
+      : 'TensorShapeException on "$tensorName": $message\n  → $remedy';
 }
 
 /// A tensor was read as a type it does not hold.
@@ -94,6 +131,51 @@ final class DTypeMismatchException extends FluttorchException {
   final String tensorName;
   final DType declared;
   final DType requested;
+
+  @override
+  String get remedy =>
+      'Read it as ${declared.wireName}, which is what the export wrote. '
+      'Reinterpreting the bytes as ${requested.wireName} yields numbers rather '
+      'than an error.';
+}
+
+/// The backend cannot execute a tensor of this element type.
+///
+/// Distinct from [DTypeMismatchException], which is a caller reading bytes as
+/// the wrong type. Nothing is being misread here: the manifest and the buffer
+/// agree, and the device simply has no kernel for that type. The two were one
+/// class until the runtimes reported this case as "holds float16 and was read
+/// as float32", which describes a bug the caller does not have and sends them
+/// looking at code that is correct.
+final class DTypeUnsupportedException extends FluttorchException {
+  DTypeUnsupportedException({
+    required this.tensorName,
+    required this.dtype,
+    required this.backend,
+    required this.supported,
+  }) : super(
+         'backend "$backend" cannot execute ${dtype.wireName}, which is what '
+         '"$tensorName" declares; it handles '
+         '${supported.map((d) => d.wireName).join(", ")}',
+       );
+
+  /// The tensor whose type the backend cannot carry.
+  final String tensorName;
+
+  /// The type the manifest declares for it.
+  final DType dtype;
+
+  /// The backend that was asked.
+  final String backend;
+
+  /// Every type this backend does handle.
+  final List<DType> supported;
+
+  @override
+  String get remedy =>
+      'Export for a backend that handles ${dtype.wireName}, or re-export the '
+      'model at a type this one carries. Casting the tensor here would run and '
+      'would not be the model that was measured.';
 }
 
 /// The device cannot do what was asked, and no fallback applies.
@@ -114,6 +196,13 @@ final class BackendUnavailableException extends FluttorchException {
 
   final String requested;
   final List<String> available;
+
+  @override
+  String get remedy => available.isEmpty
+      ? 'Check that the native library was built and linked. A device offering '
+            'no backend at all usually means the binding never loaded.'
+      : 'Load with one of ${available.join(", ")}, or ask the runtime for its '
+            'capabilities first and choose from what it reports.';
 }
 
 /// A capability the call depends on is absent on this backend.
@@ -132,4 +221,9 @@ final class CapabilityUnavailableException extends FluttorchException {
 
   final String backend;
   final String capability;
+
+  @override
+  String get remedy =>
+      'Ask the model for its capabilities and degrade, rather than assuming '
+      'every backend can do this. A backend that cannot is not a broken one.';
 }

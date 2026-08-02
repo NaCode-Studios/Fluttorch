@@ -64,13 +64,18 @@ final class OnnxRuntime implements FluttorchRuntime {
     final caps = native.capabilities;
     if (!caps.toRuntime().supportsAllTypesIn(manifest)) {
       native.dispose();
-      throw DTypeMismatchException(
-        tensorName: manifest.name,
-        declared: [
-          ...manifest.inputs,
-          ...manifest.outputs,
-        ].firstWhere((s) => !caps.dtypes.contains(s.dtype)).dtype,
-        requested: caps.dtypes.first,
+      // Named for the tensor that cannot run, not for the model. The old
+      // message said the model "holds X and was read as Y", which describes a
+      // caller bug that is not the one they have.
+      final offending = [
+        ...manifest.inputs,
+        ...manifest.outputs,
+      ].firstWhere((s) => !caps.dtypes.contains(s.dtype));
+      throw DTypeUnsupportedException(
+        tensorName: offending.name,
+        dtype: offending.dtype,
+        backend: native.backend,
+        supported: caps.dtypes.toList(),
       );
     }
 

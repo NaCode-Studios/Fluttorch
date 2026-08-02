@@ -245,9 +245,22 @@ void main() {
         FakeBindings(dtypes: const {DType.int8}),
       );
 
+      // Not DTypeMismatchException, which this asserted until the message it
+      // produces was read: "features holds float32 and was read as int8" tells
+      // a reader they have a bug in code that is correct. Nothing was misread.
+      // The manifest and the buffer agree and the device has no float32 kernel.
       await expectLater(
         runtime.load(artifact: _artifact, manifest: _manifest()),
-        throwsA(isA<DTypeMismatchException>()),
+        throwsA(
+          isA<DTypeUnsupportedException>()
+              .having((e) => e.tensorName, 'names the tensor', 'features')
+              .having((e) => e.dtype, 'and the type it declares', DType.float32)
+              .having(
+                (e) => e.supported,
+                'and what the backend does carry',
+                contains(DType.int8),
+              ),
+        ),
       );
     });
   });
