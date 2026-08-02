@@ -8,11 +8,11 @@ environment:
 resolution: workspace
 
 dependencies:
-  fluttorch: ^0.7.0
+  fluttorch: ^1.0.0
 
 dev_dependencies:
   build_runner: ^2.16.0
-  fluttorch_gen: ^0.7.0
-  fluttorch_test: ^0.7.0
+  fluttorch_gen: ^1.0.0
+  fluttorch_test: ^1.0.0
   lints: ^6.0.0
   test: ^1.25.0

@@ -9,6 +9,8 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-08-02
+
 ### Added
 
 - A model with two inputs and two outputs is exported, run and measured.
@@ -50,7 +52,7 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
   softmax, exported once per backend because an ExecuTorch artifact is lowered
   for a delegate and handing one to another measures which file was loaded.
 
-- A stability policy, in [`STABILITY.md`](STABILITY.md). Four surfaces here carry a compatibility
+- A stability policy (M31), in [`STABILITY.md`](STABILITY.md). Four surfaces here carry a compatibility
   promise and only one of them is a Dart API, so each gets its own rule: the manifest is a document
   two implementations parse in two languages, the C header is an ABI three bindings implement and
   consumers link as a prebuilt library, the generated Dart is code that gets committed and diffed by
@@ -58,7 +60,7 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
   least two minor releases, which is ExecuTorch's own policy rather than a number chosen here: a
   binding cannot outlive a symbol the engine below it has removed.
 
-- Published benchmarks, in [`docs/benchmarks.md`](docs/benchmarks.md), with the tool that reproduces
+- Published benchmarks (M32), in [`docs/benchmarks.md`](docs/benchmarks.md), with the tool that reproduces
   them. Codegen is about a millisecond per manifest and flat across models that differ by three orders
   of magnitude in weight size, so it is not why a build is slow. Load tracks artifact size at roughly
   6.5 ms per megabyte, which is 22 ms once per process for VoltaCast. `runInto` saves four to seven
@@ -711,7 +713,8 @@ user can invoke yet, which is what `0.0.1` says that a minor would overstate.
   needs neither `torch` nor `executorch`.
 - 109 tests: 90 Dart across three packages, 19 Python.
 
-[Unreleased]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/NaCode-Studios/Fluttorch/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.7.0...v1.0.0
 [0.7.0]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.4.0...v0.5.0

@@ -54,20 +54,22 @@ the [concepts](https://nacode-studios.github.io/Fluttorch/concepts.html), a
 [what each failure means](https://nacode-studios.github.io/Fluttorch/errors.html) including the one
 that is deliberately not a failure at all.
 
-> **Status — `0.7.0`, early development.** The loop from `torch.export` to a typed Dart API to a
-> parity gate runs on hardware, reaches a phone, and now carries a model that can go wrong. VoltaCast
-> is a seq2seq Transformer forecasting Italian electricity demand a day ahead, trained on eleven years
-> of real data, and it holds its goldens to `5.96e-7` through LiteRT. Getting there used the runtime
-> layer for the first time rather than only demonstrating it: ExecuTorch lowers that model and fails
-> to execute it, so the same bundle went to a different engine, unchanged.
-> The tolerances are now measured rather than assumed, and the measurement said something worth
-> knowing: the two-layer model drifts up to eight times further than the convolutional one, and it is
-> the simpler network. Its outputs land near `9.4` while the other ends in a softmax, and a relative
-> error is measured against the output while the rounding happened on intermediates. One bound is
-> still unmeasured and says so, because nothing here exports int4.
-> `fluttorch_executorch` stays unpublished because pub.dev cannot carry the native half.
+> **Status — `1.0.0`.** The API is frozen and [`STABILITY.md`](STABILITY.md) says what that covers:
+> four surfaces carry a compatibility promise and only one of them is a Dart API. A deprecated API
+> survives at least two minor releases, which is ExecuTorch's own policy rather than a number chosen
+> here.
+> The tolerances are measured rather than assumed, and the measurement said something worth knowing:
+> the two-layer model drifts up to eight times further than the convolutional one, and it is the
+> simpler network. Its outputs land near `9.4` while the other ends in a softmax, and a relative error
+> is measured against the output while the rounding happened on intermediates. One bound is still
+> unmeasured and says so, because nothing here exports int4.
+> What `1.0` does not mean is that every engine runs every model. ExecuTorch lowers VoltaCast and then
+> fails to execute it, identically under its own Python runtime, and the suite records that as a
+> failing expectation so the day upstream fixes it, the suite says so.
+> `fluttorch_executorch` and the other two bindings stay unpublished because pub.dev cannot carry the
+> native half.
 > The [board](https://github.com/orgs/NaCode-Studios/projects/6) is the plan of record and tracks it
-> milestone by milestone. Until `1.0`, minor versions may break.
+> milestone by milestone.
 
 ## Why Fluttorch
 
@@ -95,12 +97,12 @@ report always says which backend produced it.
 
 ```yaml
 dependencies:
-  fluttorch: ^0.7.0
+  fluttorch: ^1.0.0
 
 dev_dependencies:
   build_runner: ^2.4.0
-  fluttorch_gen: ^0.7.0
-  fluttorch_test: ^0.7.0
+  fluttorch_gen: ^1.0.0
+  fluttorch_test: ^1.0.0
 ```
 
 The generator and the gate are `dev_dependencies`: neither runs in a shipped app, and an app that
@@ -183,10 +185,15 @@ carry five distinct messages and each says what to do about it, with drift delib
 them because it is a measurement rather than an error. VoltaCast is exported, measured and documented.
 The documentation is a [site](https://nacode-studios.github.io/Fluttorch/).
 
-**Next.** Stabilisation. An API freeze and a deprecation policy, tolerances replaced by measured ones,
-and benchmarks, because parity is proven and cost is not.
+**Shipped (`1.0.0`).** Tier 9. Stabilisation. The tolerances are measured against two models rather
+than started from, and the parity matrix runs on one with convolutions and normalisation instead of
+two linear layers that had nowhere to disagree. An artifact can be more than one file, so a model
+whose weights leave its graph is carried with a hash that still covers the numbers. A manifest can
+declare two inputs and two outputs and every engine keeps them apart. The API freeze is written down,
+and so is what a run costs.
 
-**Later.** `1.0`, and after it the targets Flutter has that this runtime does not yet reach.
+**Next.** The targets Flutter has that this runtime does not yet reach: the web backend, a signed
+manifest, and parity proven where cost is not.
 
 The [board](https://github.com/orgs/NaCode-Studios/projects/6) carries the milestone plan and its
 exit criteria, and every tier is a [milestone](https://github.com/NaCode-Studios/Fluttorch/milestones)
