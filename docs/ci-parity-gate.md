@@ -94,10 +94,12 @@ a step that fails loudly when the fetch does. `expectParity` refuses a bundle wi
 same reason: a gate that passes because it had nothing to check is indistinguishable from a healthy
 model until the day it matters.
 
-The tolerance is reviewed like code. `Tolerance.startingPointFor` gives a documented starting point
-per quantization recipe so that a first run fails informatively, and every one of those numbers
-should be replaced by a value measured against your model. Widening a tolerance to make a red build
-green is a decision, and it belongs in a diff someone reads.
+The tolerance is reviewed like code. `Tolerance.boundFor` gives a bound per quantization recipe and
+precision, measured against the models in this repository and citing which. That is a default rather
+than an answer about your model: the number that is right for one is a property of its activation
+ranges, and a model whose outputs are large drifts further for the same rounding. Measure yours and
+pass it to the gate. Widening a tolerance to make a red build green is a decision, and it belongs in
+a diff someone reads.
 
 The report names the backend it measured. A model that is correct on XNNPACK and wrong on Core ML
 is a real outcome, so a run that does not say which backend produced it cannot be acted on. When

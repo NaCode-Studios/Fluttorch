@@ -84,11 +84,22 @@ abstract interface class FluttorchRuntime {
   /// same input agree. It throws [CapabilityUnavailableException] rather than
   /// falling back, because a tolerance chosen against a promise that was quietly
   /// dropped is a tolerance measuring run-to-run noise.
+  /// [parts] carries the files the artifact references and cannot be loaded
+  /// without, keyed by the name [ModelManifest.parts] declares them under.
+  /// Empty for a model whose weights fit inside its graph, which is nearly all
+  /// of them.
+  ///
+  /// Throws [BundlePartMissingException] when the manifest declares a part that
+  /// did not arrive, and [CapabilityUnavailableException] when the runtime
+  /// cannot resolve external data at all. Neither is a fallback: a graph loaded
+  /// without the weights it references still parses, still declares every shape
+  /// the manifest promised, and still answers.
   Future<LoadedModel> load({
     required Uint8List artifact,
     required ModelManifest manifest,
     String? backend,
     bool deterministic = false,
+    Map<String, Uint8List> parts = const {},
   });
 }
 

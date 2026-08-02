@@ -121,6 +121,50 @@ void main() {
     });
   });
 
+  group('a model with more than one output', () {
+    // Until `testdata/multi_io` there was no export that returned two tensors,
+    // so this loop had only ever emitted index 0 and the accessor for a second
+    // output had never been written, let alone called. The behaviour is pinned
+    // end to end in examples/typed_api, which runs the generated code against
+    // two tensors it can tell apart; this is the same claim one layer down,
+    // where whoever changes the emitter will see it first.
+    const outputs = [
+      TensorSpec(name: 'primary', dtype: DType.float32, shape: [1, 3]),
+      TensorSpec(name: 'auxiliary', dtype: DType.float32, shape: [1, 3]),
+    ];
+
+    test('each accessor reads its own position', () {
+      final source = emit(
+        manifestWith(outputs: outputs),
+        sourceName: 'demo.fluttorch.json',
+      );
+
+      expect(
+        source,
+        contains('DemoPrimary get primary => DemoPrimary._(_tensors[0]);'),
+      );
+      expect(
+        source,
+        contains(
+          'DemoAuxiliary get auxiliary => DemoAuxiliary._(_tensors[1]);',
+        ),
+      );
+    });
+
+    test('one type per output, even where the shapes agree', () {
+      final source = emit(
+        manifestWith(outputs: outputs),
+        sourceName: 'demo.fluttorch.json',
+      );
+
+      // Same dtype and same shape, so nothing but the name separates them. A
+      // generator that keyed off the spec rather than the declaration would
+      // emit one type here and the two outputs would become interchangeable.
+      expect(source, contains('extension type const DemoPrimary._'));
+      expect(source, contains('extension type const DemoAuxiliary._'));
+    });
+  });
+
   group('M10 · preprocessing is generated, never hand-written', () {
     test('a rescale becomes the arithmetic it describes', () {
       final source = emit(

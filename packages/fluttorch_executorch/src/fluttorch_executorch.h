@@ -98,6 +98,37 @@ ft_status_t ft_capabilities(const char* backend, ft_capabilities_t* out);
 ft_status_t ft_load(const uint8_t* artifact, int64_t length, const char* backend,
                     int32_t deterministic, ft_model_t** out_model);
 
+// One file an artifact references and cannot be loaded without.
+//
+// `name` is a reference rather than a path: the artifact carries the string
+// internally, and the engine resolves it against what it is handed here. A
+// caller that renamed a part on the way has a graph that can no longer find it.
+typedef struct {
+  const char* name;
+  const uint8_t* data;
+  int64_t length;
+} ft_part_t;
+
+// Loads a model whose weights live beside its graph rather than inside it.
+//
+// Above a size the exporting toolchain decides for itself, the weights leave
+// the graph. Both files then travel together or neither is usable, and the one
+// that goes missing is the one carrying the numbers: the graph alone still
+// parses, still declares the right shapes, and still runs.
+//
+// With `part_count` of zero this is exactly ft_load, so a caller does not have
+// to know which shape it holds before it asks.
+//
+// A runtime that cannot resolve external data fails with
+// FT_ERROR_CAPABILITY_UNAVAILABLE and says what would have to change. Refusing
+// is the whole point: loading the graph and leaving the weights behind produces
+// a session that answers, which is the failure this signature exists to
+// prevent.
+ft_status_t ft_load_parts(const uint8_t* artifact, int64_t length,
+                          const ft_part_t* parts, int32_t part_count,
+                          const char* backend, int32_t deterministic,
+                          ft_model_t** out_model);
+
 // The backend actually in use, which is not necessarily the one requested: a
 // runtime that fell back has to be able to say so, or the report names the
 // wrong hardware.

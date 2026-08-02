@@ -1,6 +1,41 @@
 import 'errors.dart';
 import 'tensor.dart';
 
+/// One file of an artifact that is more than one file.
+///
+/// Above a size the exporting toolchain decides for itself, the weights leave
+/// the graph and land beside it. The graph then references them by file name,
+/// and a loader handed only the graph has the structure and none of the
+/// numbers.
+///
+/// [name] is that reference, not a path. It is the string the artifact itself
+/// carries, so the bytes have to be handed back under exactly it for the engine
+/// to resolve them, and a part renamed on the way is a part the graph can no
+/// longer find.
+final class BundlePart {
+  const BundlePart({
+    required this.name,
+    required this.size,
+    required this.hash,
+  });
+
+  /// The name the artifact references this part by.
+  final String name;
+
+  /// Length in bytes, so a truncated part is caught before it is hashed.
+  final int size;
+
+  /// Content hash of this part alone, in `algorithm:hex` form.
+  ///
+  /// [ModelManifest.weightHash] already covers every part, so this is not what
+  /// makes the bundle sound. It is what lets a mismatch name which part moved
+  /// instead of reporting that something in the bundle did.
+  final String hash;
+
+  @override
+  String toString() => 'BundlePart($name, $size bytes)';
+}
+
 /// The contract emitted alongside an exported model.
 ///
 /// One document, three readers: the generator turns it into a typed Dart API,
@@ -22,10 +57,24 @@ final class ModelManifest {
     this.goldens = const [],
     this.activations = const [],
     this.activationHandles = const [],
+    this.parts = const [],
   });
 
-  /// Schema version this build writes, and the highest it can read.
-  static const int currentSchemaVersion = 1;
+  /// The highest schema version this build can read.
+  ///
+  /// Raised to 2 when [parts] arrived. Every field added before it was
+  /// additive, meaning a reader that did not know it carried on doing what it
+  /// did before, and the version could stay where it was. [parts] is the first
+  /// that is not: this decoder ignores keys it does not recognise, so a build
+  /// without it would load an artifact whose weights live elsewhere, find a
+  /// well-formed graph with no numbers in it, and answer.
+  static const int currentSchemaVersion = 2;
+
+  /// The version an export declares when it carries no [parts].
+  ///
+  /// Still written for every such model, which is nearly all of them, so
+  /// nothing had to be re-exported when the version moved.
+  static const int schemaVersionWithoutParts = 1;
 
   /// Identifier used to name the generated Dart class.
   final String name;
@@ -115,6 +164,17 @@ final class ModelManifest {
   /// the reference activations it was given, and simply cannot ask a device for
   /// its own.
   final List<int> activationHandles;
+
+  /// Files the artifact references and cannot be loaded without.
+  ///
+  /// Empty for a model whose weights fit inside its graph, which is nearly all
+  /// of them and the shape the rest of this contract was written around.
+  ///
+  /// Above a size the exporting toolchain decides for itself, the weights leave
+  /// the graph and land beside it, referenced by file name. [weightHash] covers
+  /// these as well as the artifact, so the pairing this contract rests on still
+  /// covers the numbers rather than only the structure.
+  final List<BundlePart> parts;
 
   /// Whether any preprocessing step is unrecognised by this build.
   ///

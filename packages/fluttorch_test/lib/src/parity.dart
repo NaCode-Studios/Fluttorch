@@ -16,7 +16,7 @@ import 'tolerance.dart';
 /// missing, rather than leaving the absence of an attribution to be read as
 /// agreement.
 ///
-/// [tolerance] defaults to [Tolerance.startingPointFor] on the manifest's
+/// [tolerance] defaults to [Tolerance.boundFor] on the manifest's
 /// quantization recipe. That returns null for a recipe this build does not
 /// know, in which case a tolerance must be supplied: there is no default worth
 /// guessing for a scheme nobody has measured.
@@ -31,7 +31,7 @@ Future<List<DriftReport>> measureParity(
 }) async {
   final bounds =
       tolerance ??
-      Tolerance.startingPointFor(
+      Tolerance.boundFor(
         model.manifest.quantization,
         precision: model.manifest.precision,
       );

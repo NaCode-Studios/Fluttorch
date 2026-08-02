@@ -9,6 +9,102 @@ Entries name the roadmap milestone they correspond to, e.g. `(M14)`, so a claim 
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-08-02
+
+### Added
+
+- A model with two inputs and two outputs is exported, run and measured.
+  Everything committed until now returned a single tensor, so the code that
+  keeps a second one in the right order had been read and never executed: the
+  gate's loop over the outputs had only ever taken one trip, and the generated
+  API had never emitted an index other than zero. `testdata/multi_io` is the
+  fixture that runs it, through all three engines, because each shim converts
+  its own runtime's output list into ours and one of them being right says
+  nothing about the other two. Its two inputs share a shape and so do its two
+  outputs, which is the point rather than a convenience: a pair that differed
+  in shape would be caught on the way past by the shape check, and the fixture
+  would then pass for a reason that has nothing to do with ordering.
+
+- An artifact can be more than one file, and the hash still covers the numbers.
+  Above a size the exporting toolchain decides for itself, the weights leave the
+  graph and land beside it: `torch.onnx` leaves 506 kB of structure in VoltaCast's
+  artifact and puts 3.4 MB of weights next to it. That was refused, because
+  `weight_hash` was taken over the artifact and would have covered the shape of a
+  model and none of its numbers. A manifest now names the parts and the hash
+  covers them, each contributing its name and its length as well as its bytes,
+  and `ft_load_parts` hands the bytes to the engine under the name the graph
+  references rather than asking it to find a file it has no path to. ONNX Runtime
+  carries them; ExecuTorch and LiteRT refuse and say why, because a graph loaded
+  without the weights it references still parses, still declares every shape the
+  manifest promised, and still answers.
+
+  `schema_version` rises to 2, and only for a manifest that actually carries
+  parts. Every field added before this one was additive, meaning a reader that
+  did not know it carried on doing what it did before; this one is not, and the
+  version is the only thing standing between an older reader and a model with no
+  numbers in it. Nothing that already shipped needs re-exporting.
+
+- The parity matrix runs on a model that can go wrong. It had only ever been
+  run on two linear layers, 4 to 8 to 3, whose columns came out ordered the way
+  arithmetic says they should: real evidence that the measurement works, and
+  none at all that it is useful. `testdata/matrix` is a convolutional network
+  with a foldable `BatchNorm2d`, a `GroupNorm` that reduces at run time and a
+  softmax, exported once per backend because an ExecuTorch artifact is lowered
+  for a delegate and handing one to another measures which file was loaded.
+
+- A stability policy (M31), in [`STABILITY.md`](STABILITY.md). Four surfaces here carry a compatibility
+  promise and only one of them is a Dart API, so each gets its own rule: the manifest is a document
+  two implementations parse in two languages, the C header is an ABI three bindings implement and
+  consumers link as a prebuilt library, the generated Dart is code that gets committed and diffed by
+  somebody else's CI, and the tolerances decide whether a build is green. A deprecated API survives at
+  least two minor releases, which is ExecuTorch's own policy rather than a number chosen here: a
+  binding cannot outlive a symbol the engine below it has removed.
+
+- Published benchmarks (M32), in [`docs/benchmarks.md`](docs/benchmarks.md), with the tool that reproduces
+  them. Codegen is about a millisecond per manifest and flat across models that differ by three orders
+  of magnitude in weight size, so it is not why a build is slow. Load tracks artifact size at roughly
+  6.5 ms per megabyte, which is 22 ms once per process for VoltaCast. `runInto` saves four to seven
+  microseconds over `run` and the saving does not scale with the model, which inverts the advice you
+  might expect: it is worth reaching for on a small model called at frame rate and close to irrelevant
+  on a convolutional one.
+
+  Resident memory was measured and is not published. The delta over a thousand runs came back negative
+  as often as positive, so it records when the collector ran rather than what the loop allocated, and
+  a column of noise is worse than a missing one.
+
+### Changed
+
+- Every tolerance is measured rather than guessed, and says on what.
+  `Tolerance.startingPointFor` is now `Tolerance.boundFor`, because the old name
+  was accurate and had stopped being true: each entry cites the models it was
+  measured against and `tool/measure_tolerances.dart` reproduces the numbers.
+
+  The measurements say something worth knowing. The two-layer model drifts
+  further than the convolutional one on every backend, by up to eight times, and
+  it is the simpler network. Its outputs land near `9.4` while the other ends in
+  a softmax that pins its own into `[0, 1]`, and a relative error is measured
+  against the output while the rounding happened on intermediates. So the bounds
+  are set by the model with the large outputs, and narrowing them to what the
+  better-behaved fixture alone would justify was tried and failed the other one
+  immediately.
+
+  `int8-dynamic` widens from `5e-2` to `1e-1`. It was measured at `4.1e-2`, which
+  is not a margin of 1.2 but a coincidence, and a build on other hardware had
+  every chance of tipping a committed fixture over it. `int8-static` and
+  `int4-weight-only` widen to keep the recipes ordered. `int4-weight-only` is the
+  one entry still unmeasured, and now says so: nothing in this toolchain exports
+  it.
+
+### Fixed
+
+- A failure inside the runtime is reported as one. `RuntimeExecutionException`
+  names the engine and carries the shim's status and the runtime's own error
+  code as numbers rather than flattened into a sentence, because those are what
+  a reader takes to that runtime's source. The three shims raised
+  `ManifestFormatException` here, whose remedy is to re-export: on a bundle
+  whose manifest parsed and whose hash matched, that rebuilds something already
+  correct and leaves the cause unexamined. VoltaCast is what made it obvious.
+
 ## [0.7.0] - 2026-08-02
 
 ### Added
@@ -617,7 +713,8 @@ user can invoke yet, which is what `0.0.1` says that a minor would overstate.
   needs neither `torch` nor `executorch`.
 - 109 tests: 90 Dart across three packages, 19 Python.
 
-[Unreleased]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/NaCode-Studios/Fluttorch/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.7.0...v1.0.0
 [0.7.0]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/NaCode-Studios/Fluttorch/compare/v0.4.0...v0.5.0

@@ -94,6 +94,25 @@ ft_status_t ft_load(const uint8_t* artifact, int64_t length, const char* backend
   return FT_OK;
 }
 
+ft_status_t ft_load_parts(const uint8_t* artifact, int64_t length,
+                          const ft_part_t* parts, int32_t part_count,
+                          const char* backend, int32_t deterministic,
+                          ft_model_t** out_model) {
+  // The stub carries no engine, so there is nothing here that could resolve a
+  // weight file. It refuses for the same reason the two real bindings that
+  // cannot do it refuse: a graph loaded without the weights it references still
+  // parses and still answers.
+  if (part_count > 0) {
+    if (parts == NULL) {
+      return fail(FT_ERROR_INVALID_ARGUMENT,
+                  "part_count disagrees with the parts it points at");
+    }
+    return fail(FT_ERROR_CAPABILITY_UNAVAILABLE,
+                "this stub resolves no weights that live beside a graph");
+  }
+  return ft_load(artifact, length, backend, deterministic, out_model);
+}
+
 const char* ft_model_backend(ft_model_t* model) {
   return model == NULL ? NULL : model->backend;
 }

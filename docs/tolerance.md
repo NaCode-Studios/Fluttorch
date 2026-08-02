@@ -25,7 +25,7 @@ and MPS run at float16 by default, so an artifact lowered for either answers to 
 even when nothing was quantized. Without this recorded, the gate failed models that were correct.
 
 They compound because an int8 model on a half-precision GPU is wrong in both ways at once, so
-`startingPointFor` takes the larger of the two contributions per axis rather than the first one it
+`boundFor` takes the larger of the two contributions per axis rather than the first one it
 finds.
 
 ## Why float16's bound is not its epsilon
@@ -39,17 +39,26 @@ magnitude `1e3` and its intermediate activations sit around `1e3` while its outp
 at `1e3` survives the cancellation; the magnitude it is measured against does not. Divide one by the
 other and the relative error at the output is two orders larger than epsilon at the intermediate.
 
-So float16 starts at `2e-2` relative. That is not slack, it is the arithmetic.
+So float16 sits at `2e-2` relative. That is not slack, it is the arithmetic.
 
-## Starting points, not measurements
+## What the numbers were measured on
 
-Every number the table currently carries is a starting point: chosen to be defensible and wide enough
-not to fail a correct model, rather than measured across a population of models and backends.
+Every bound in the table except one comes from a measurement, and each entry cites what it was
+measured against. `packages/fluttorch_executorch/tool/measure_tolerances.dart` reproduces them.
 
-This is stated rather than hidden because a tolerance is the one number in this project that decides
-whether a build is green, and a reader deserves to know which of them were measured. Replacing them
-with measured values is
-[issue 60](https://github.com/NaCode-Studios/Fluttorch/issues/60), and it is open.
+Two models, and the difference between them is the part worth reading. `testdata/matrix` is a
+convolutional network with two kinds of normalisation and a softmax; `testdata/taps` and its
+siblings are the two-layer model. The simpler one drifts up to eight times further on every backend,
+because its outputs land near `9.4` while the other ends in a softmax that pins its own into
+`[0, 1]`, and a relative error is measured against the output while the rounding happened on
+intermediates. The bounds are set by the model with the large outputs. Narrowing float16 to what the
+convolutional model alone would justify was tried and failed the other fixture immediately.
+
+The exception is `int4-weight-only`, which is still a starting point and says so in its own comment:
+nothing in this toolchain exports int4, so there is no artifact to measure.
+
+None of that makes a bound an answer about your model. The number that is right for one is a property
+of its activation ranges, which is exactly what the two models above demonstrate. Measure yours.
 
 ## Overriding one
 

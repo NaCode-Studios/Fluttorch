@@ -19,11 +19,23 @@ import 'src/bundle.dart';
 /// a bundle is one directory plus one manifest with nothing in between to keep
 /// in step.
 final class DirectoryGoldenBundle extends BytesGoldenBundle {
-  const DirectoryGoldenBundle(super.manifest, {required this.root});
+  const DirectoryGoldenBundle(
+    super.manifest, {
+    required this.root,
+    this.bundleRoot,
+  });
 
   /// Directory holding the goldens, which the exporter writes as `goldens/`
   /// beside the artifact.
   final String root;
+
+  /// Directory the manifest itself was read from.
+  ///
+  /// Separate from [root] because a bundle's parts sit beside the manifest
+  /// rather than among the goldens: one is the contract and its artifact, the
+  /// other is the evidence. Null when the bundle was built without opening a
+  /// manifest file, in which case [parts] has nowhere to look and says so.
+  final String? bundleRoot;
 
   /// Reads the manifest at [manifestPath] and takes its goldens from [root],
   /// which defaults to the `goldens/` directory written beside it.
@@ -40,7 +52,41 @@ final class DirectoryGoldenBundle extends BytesGoldenBundle {
     return DirectoryGoldenBundle(
       manifest,
       root: root ?? '${file.parent.path}/goldens',
+      bundleRoot: file.parent.path,
     );
+  }
+
+  /// The files the manifest declares under `parts`, read from beside it.
+  ///
+  /// Empty for a model whose weights fit inside its graph, which is nearly all
+  /// of them, so a caller can pass this to a runtime without asking which shape
+  /// of bundle it holds.
+  Future<Map<String, Uint8List>> parts() async {
+    if (manifest.parts.isEmpty) return const {};
+    final dir = bundleRoot;
+    if (dir == null) {
+      throw StateError(
+        'the manifest for "${manifest.name}" declares '
+        '${manifest.parts.length} part(s), and this bundle was built without a '
+        'directory to read them from. Open it with '
+        'DirectoryGoldenBundle.open so the parts come from beside the manifest.',
+      );
+    }
+    final read = <String, Uint8List>{};
+    for (final part in manifest.parts) {
+      final file = File('$dir/${part.name}');
+      if (!file.existsSync()) {
+        // Named rather than left to the loader. Both files travel together or
+        // neither is usable, and the one that goes missing is the one carrying
+        // the numbers: the graph alone still parses and still answers.
+        throw BundlePartMissingException(
+          missing: [part.name],
+          model: manifest.name,
+        );
+      }
+      read[part.name] = await file.readAsBytes();
+    }
+    return read;
   }
 
   @override

@@ -10,6 +10,7 @@ has the toolchain.
 
 from __future__ import annotations
 
+import hashlib
 import pathlib
 
 import pytest
@@ -24,7 +25,10 @@ from fluttorch_export.export import (  # noqa: E402
     export_model,
     resolve,
 )
-from fluttorch_export.manifest import ManifestError  # noqa: E402
+from fluttorch_export.manifest import (  # noqa: E402
+    SCHEMA_VERSION_WITH_PARTS,
+    ManifestError,
+)
 from fluttorch_export.quantization import QuantizationError  # noqa: E402
 
 from . import sample_model  # noqa: E402
@@ -309,13 +313,12 @@ class TestRuntimes:
                 taps=["fc1"],
             )
 
-    def test_onnx_refuses_a_model_whose_weights_left_the_graph(self, tmp_path) -> None:
+    def test_onnx_carries_a_model_whose_weights_left_the_graph(self, tmp_path) -> None:
         pytest.importorskip("onnxscript", reason="the ONNX export needs onnxscript")
 
         # Above a size torch.onnx decides on its own, the weights move into a
-        # sidecar. The bundle would then pass every check while carrying none of
-        # the numbers: the weight hash covers the graph file, and the runtime
-        # loads an artifact as bytes and cannot reach a file beside it.
+        # sidecar beside the graph. The bundle carries it as a named part, and
+        # what makes that carrying rather than pretending is the hash.
         class Big(torch.nn.Module):
             def __init__(self) -> None:
                 super().__init__()
@@ -324,14 +327,37 @@ class TestRuntimes:
             def forward(self, x: torch.Tensor) -> torch.Tensor:
                 return self.fc(x)
 
-        with pytest.raises(ExportError, match="sidecar"):
-            export_model(
-                model=Big().eval(),
-                example_inputs=torch.zeros(1, 2048),
-                out_dir=tmp_path / "big",
-                name="big",
-                runtime="onnx",
-            )
+        result = export_model(
+            model=Big().eval(),
+            example_inputs=torch.zeros(1, 2048),
+            out_dir=tmp_path / "big",
+            name="big",
+            runtime="onnx",
+        )
+        m = result.manifest
+
+        assert len(m.parts) == 1, "the weights did not leave the graph, so this proves nothing"
+        part = m.parts[0]
+        assert part.name == "big.onnx.data"
+        assert part.size > 1_000_000
+
+        # The part is beside the artifact, under the name the graph references.
+        # A loader is handed the bytes under that name; it is never given a path.
+        beside = result.artifact.parent / part.name
+        assert beside.is_file()
+        assert beside.stat().st_size == part.size
+        assert "sha256:" + hashlib.sha256(beside.read_bytes()).hexdigest() == part.hash
+
+        # The assertion the whole issue turns on. Before this, the weight hash was
+        # taken over the artifact, which for this model is a few kilobytes of
+        # structure: a bundle could pass every check while carrying none of the
+        # numbers. If these two ever agree again, that is back.
+        graph_only = "sha256:" + hashlib.sha256(result.artifact.read_bytes()).hexdigest()
+        assert m.weight_hash != graph_only
+
+        # And a reader that does not know about parts has to refuse rather than
+        # load the structure alone, which only the schema version can make it do.
+        assert m.schema_version == SCHEMA_VERSION_WITH_PARTS
 
     def test_an_onnx_bundle_carries_only_what_the_hash_covers(self, tmp_path) -> None:
         pytest.importorskip("onnxscript", reason="the ONNX export needs onnxscript")

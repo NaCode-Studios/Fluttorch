@@ -27,11 +27,12 @@ final class ExecuTorchRuntime implements FluttorchRuntime {
     required ModelManifest manifest,
     String? backend,
     bool deterministic = false,
+    Map<String, Uint8List> parts = const {},
   }) async {
     // Before anything native touches it. An artifact paired with the wrong
     // manifest satisfies every shape and returns every number wrong, and the
     // cheapest place to catch that is before the bytes leave Dart.
-    verifyArtifact(artifact: artifact, manifest: manifest);
+    verifyArtifact(artifact: artifact, manifest: manifest, parts: parts);
 
     // And before that, whether this runtime is the one the bundle was written
     // for. A .onnx handed to ExecuTorch passes the weight hash, because the
@@ -55,6 +56,7 @@ final class ExecuTorchRuntime implements FluttorchRuntime {
       artifact: artifact,
       backend: backend,
       deterministic: deterministic,
+      parts: parts,
     );
 
     final caps = native.capabilities;

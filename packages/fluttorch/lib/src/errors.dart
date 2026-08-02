@@ -55,6 +55,40 @@ final class ArtifactMismatchException extends FluttorchException {
       'hand to agree with the other hides the mismatch instead of fixing it.';
 }
 
+/// A bundle arrived without a file its artifact cannot be loaded without.
+///
+/// Above a size the exporting toolchain decides for itself, the weights leave
+/// the graph and land beside it. Both files then travel together or neither is
+/// usable, and the one that goes missing is the one carrying the numbers: the
+/// graph on its own still parses, still declares the right shapes, and still
+/// runs, which is why this is refused loudly rather than discovered in the
+/// outputs.
+///
+/// Usually an asset bundle or a deployment step that copied the artifact and
+/// not what sits next to it.
+final class BundlePartMissingException extends FluttorchException {
+  BundlePartMissingException({required this.missing, required this.model})
+    : super(
+        missing.length == 1
+            ? 'the bundle for "$model" is missing "${missing.single}", which '
+                  'the artifact references and cannot be loaded without'
+            : 'the bundle for "$model" is missing ${missing.length} files its '
+                  'artifact references and cannot be loaded without: '
+                  '${missing.join(", ")}',
+      );
+
+  /// Names of the parts that did not arrive, as the manifest declares them.
+  final List<String> missing;
+
+  /// Model the bundle belongs to, so the message names one bundle among many.
+  final String model;
+
+  @override
+  String get remedy =>
+      'Ship every file the export wrote beside the manifest, not the artifact '
+      'alone. The manifest lists them under "parts".';
+}
+
 /// The manifest could not be read.
 ///
 /// [field] names where the decoder stopped, so a hand-edited manifest can be
@@ -176,6 +210,56 @@ final class DTypeUnsupportedException extends FluttorchException {
       'Export for a backend that handles ${dtype.wireName}, or re-export the '
       'model at a type this one carries. Casting the tensor here would run and '
       'would not be the model that was measured.';
+}
+
+/// The runtime failed while doing something, and the bundle is not at fault.
+///
+/// The manifest parsed, the artifact matched its hash, and in most cases the
+/// model had already loaded. What failed is the engine, and the useful next
+/// step is the engine's own issue tracker rather than a re-export.
+///
+/// [status] is the shim's own code and [code] is whatever the runtime reported
+/// underneath it. Both are carried as numbers rather than flattened into the
+/// message, because those are the two values that mean something to somebody
+/// reading the runtime's source.
+///
+/// This exists because the shims raised [ManifestFormatException] here, whose
+/// remedy is to re-export. On a bundle that is provably correct that advice
+/// sends a reader to rebuild something that was never wrong, and the real cause
+/// stays unexamined.
+final class RuntimeExecutionException extends FluttorchException {
+  RuntimeExecutionException({
+    required this.runtime,
+    required this.operation,
+    required this.status,
+    this.code,
+    this.detail,
+  }) : super(
+         'the $runtime runtime failed while $operation: status $status'
+         '${code == null ? "" : ", error $code"}'
+         '${detail == null ? "" : ", $detail"}',
+       );
+
+  /// The engine that failed: `executorch`, `onnx` or `litert`.
+  final String runtime;
+
+  /// What was being done, in the caller's terms: "running inference".
+  final String operation;
+
+  /// The shim's status code.
+  final int status;
+
+  /// The runtime's own error code, where it reported one.
+  final int? code;
+
+  /// Whatever text the runtime attached.
+  final String? detail;
+
+  @override
+  String get remedy =>
+      'Take status $status${code == null ? "" : " and error $code"} to the '
+      '$runtime runtime, not to the export. The manifest parsed and the hash '
+      'matched, so re-exporting would rebuild something that is already right.';
 }
 
 /// The device cannot do what was asked, and no fallback applies.

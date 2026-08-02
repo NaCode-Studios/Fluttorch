@@ -68,7 +68,7 @@ class TestCalibration:
 class TestBothSidesKnowTheSameRecipes:
     """A recipe the exporter can apply and the gate has no tolerance for is a
     model the gate cannot judge, and the failure is silent: the manifest names a
-    scheme, ``startingPointFor`` returns null, and the suite demands a tolerance
+    scheme, ``boundFor`` returns null, and the suite demands a tolerance
     nobody has measured. The two lists are asserted equal rather than kept in
     step by hand."""
 

@@ -86,7 +86,7 @@ void main() {
     final drift = measureDrift(
       actual: actual,
       reference: reference,
-      tolerance: Tolerance.startingPointFor(manifest.quantization)!,
+      tolerance: Tolerance.boundFor(manifest.quantization)!,
     );
 
     // ignore: avoid_print

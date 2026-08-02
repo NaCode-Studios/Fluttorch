@@ -53,6 +53,7 @@ final class FakeBindings implements ExecuTorchBindings {
     required Uint8List artifact,
     String? backend,
     bool deterministic = false,
+    Map<String, Uint8List> parts = const {},
   }) {
     requestedBackend = backend;
     requestedDeterminism = deterministic;

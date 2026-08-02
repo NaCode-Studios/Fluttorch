@@ -61,6 +61,17 @@ one's message, telling a reader their tensor "holds float16 and was read as floa
 read anything. That message sends someone to look at code that is correct, which is worse than no
 message.
 
+### The runtime failed, and the bundle is fine
+
+`RuntimeExecutionException`. The manifest parsed, the artifact matched its hash, the model loaded, and
+the engine failed while running it. It carries the shim's status and the runtime's own error code as
+numbers, because those are the two values that mean something to somebody reading that runtime's
+source, and it names which of the three engines it was.
+
+This was reported as `ManifestFormatException` until VoltaCast made it obvious: a provably correct
+bundle produced a failure whose remedy was to re-export the document. That advice rebuilds something
+that was never wrong and leaves the actual cause unexamined.
+
 ## The fifth is not an exception
 
 **Drift is a measurement, not an error.**
@@ -90,4 +101,5 @@ and knowing where.
 | Loading throws naming a backend | That backend is absent. Read the list it carries |
 | A call throws naming a capability | The backend runs and cannot do that one thing |
 | Reading a tensor throws about a type | Either the read is wrong, or the device cannot carry it. The two exceptions say which |
+| It loaded and then failed while running | The engine, not the bundle. Take the status and error code to that runtime |
 | It ran, and the numbers are not the ones from the notebook | Not an exception. Read the `ParityReport` |

@@ -28,11 +28,13 @@ import torch
 from .manifest import (
     DYNAMIC_DIM,
     RUNTIMES,
+    BundlePart,
     GoldenCase,
     ManifestError,
     ModelManifest,
     PreprocessingStep,
     TensorSpec,
+    bundle_digest,
 )
 from .quantization import Recipe, check_calibration, quantizer_for, recipe_for
 
@@ -157,13 +159,16 @@ def _lower_onnx(
     out_path: pathlib.Path,
     input_names: Sequence[str],
     output_names: Sequence[str],
-) -> bytes:
-    """Export through torch.onnx and hand back the bytes.
+) -> tuple[bytes, list[tuple[str, bytes]]]:
+    """Export through torch.onnx and hand back the bytes, and any parts.
 
     Written to a file and read back because torch.onnx writes files, not
     buffers. Everything else in this module returns bytes, and the artifact is
     hashed and written once by the caller, so the round trip stays here rather
     than making the caller learn which runtimes produce which.
+
+    The second element is empty for a model whose weights fit in its graph,
+    which is the only shape the other two runtimes here produce.
     """
     try:
         torch.onnx.export(
@@ -182,34 +187,29 @@ def _lower_onnx(
         ) from e
 
     # Above a size torch.onnx decides on its own, the weights leave the graph and
-    # land in a sidecar. Two things break at once and neither announces itself.
+    # land in a sidecar beside it, referenced from the graph by file name.
     #
-    # The weight hash is computed over the artifact, which is then a few kilobytes
-    # of graph structure with the weights outside it: the pairing this whole
-    # contract rests on would cover everything except the numbers. And the runtime
-    # loads an artifact as bytes, so it could not reach the sidecar even if the
-    # manifest described it.
+    # Carried rather than refused, and carried as a named part of the bundle: the
+    # weight hash covers it, so the pairing this contract rests on still covers
+    # the numbers, and the binding is handed the bytes under the name the graph
+    # uses rather than being asked to find a file it has no path to.
     #
-    # Refused rather than written, because a bundle that passes every check and
-    # carries no weights is the exact failure this project exists to prevent.
+    # Whether the split happens is torch's decision and is left to torch. Forcing
+    # the weights back inline would make this path unreachable and the threshold
+    # somebody else's problem again, which is the state this replaces.
     sidecar = out_path.with_suffix(out_path.suffix + ".data")
-    if sidecar.exists() and sidecar.stat().st_size > 0:
-        size = sidecar.stat().st_size
-        sidecar.unlink()
-        out_path.unlink(missing_ok=True)
-        raise ExportError(
-            f"torch.onnx put {size} bytes of weights in a sidecar beside the "
-            "graph, and this toolchain cannot carry that: the weight hash would "
-            "cover the graph and not the weights, and the runtime loads an "
-            "artifact as bytes and cannot reach a file beside it. Export this "
-            "model with runtime='executorch' until external data is supported."
-        )
-    # An empty sidecar is written for every export and means the weights stayed
-    # in the graph. It is removed rather than shipped, because a file in a bundle
-    # is a thing a reader has to decide about.
-    sidecar.unlink(missing_ok=True)
+    parts: list[tuple[str, bytes]] = []
+    if sidecar.exists():
+        data = sidecar.read_bytes()
+        if data:
+            parts.append((sidecar.name, data))
+        else:
+            # An empty sidecar is written for every export and means the weights
+            # stayed in the graph. Removed rather than shipped, because a file in
+            # a bundle is a thing a reader has to decide about.
+            sidecar.unlink()
 
-    return out_path.read_bytes()
+    return out_path.read_bytes(), parts
 
 
 def _lower_litert(
@@ -600,6 +600,10 @@ def export_model(
     golden_dir = out_dir / "goldens"
     golden_dir.mkdir(parents=True, exist_ok=True)
 
+    # Files the artifact references and cannot be loaded without. Only an ONNX
+    # export produces any; the other two lower to a single self-contained file.
+    part_data: list[tuple[str, bytes]] = []
+
     if runtime == "litert":
         if recipe is not None:
             raise ExportError(
@@ -631,7 +635,7 @@ def export_model(
                 "Attribution needs runtime='executorch' with backend='portable'."
             )
         artifact = out_dir / f"{name}.onnx"
-        buffer = _lower_onnx(
+        buffer, part_data = _lower_onnx(
             model, example, artifact, [s.name for s in inputs], [s.name for s in outputs]
         )
         graph_handles, precision = {}, None
@@ -657,7 +661,18 @@ def export_model(
 
     manifest = ModelManifest(
         name=name,
-        weight_hash="sha256:" + hashlib.sha256(buffer).hexdigest(),
+        # Over the artifact and every part, in the order they are declared. With
+        # no parts this is the digest of the artifact alone, which is what every
+        # manifest written before this field said, so nothing needs re-exporting.
+        weight_hash=bundle_digest(buffer, part_data),
+        parts=tuple(
+            BundlePart(
+                name=part_name,
+                size=len(data),
+                hash="sha256:" + hashlib.sha256(data).hexdigest(),
+            )
+            for part_name, data in part_data
+        ),
         inputs=inputs,
         outputs=outputs,
         quantization=quantization,

@@ -21,7 +21,7 @@ final class LiteRtRuntime implements FluttorchRuntime {
 
   /// Opens the ONNX shim by the name each platform gives it.
   factory LiteRtRuntime.open([String? path]) =>
-      LiteRtRuntime(NativeExecuTorchBindings.open(path));
+      LiteRtRuntime(NativeExecuTorchBindings.open(path, 'litert'));
 
   @override
   Future<List<RuntimeCapabilities>> capabilities() async => [
@@ -35,6 +35,7 @@ final class LiteRtRuntime implements FluttorchRuntime {
     required ModelManifest manifest,
     String? backend,
     bool deterministic = false,
+    Map<String, Uint8List> parts = const {},
   }) async {
     // A .pte handed to LiteRT passes the weight hash, because the hash was
     // computed over whichever artifact was written, and then fails inside the
@@ -45,7 +46,7 @@ final class LiteRtRuntime implements FluttorchRuntime {
         available: const ['litert'],
       );
     }
-    verifyArtifact(artifact: artifact, manifest: manifest);
+    verifyArtifact(artifact: artifact, manifest: manifest, parts: parts);
 
     if (backend != null && !_bindings.backends().contains(backend)) {
       throw BackendUnavailableException(
@@ -58,6 +59,7 @@ final class LiteRtRuntime implements FluttorchRuntime {
       artifact: artifact,
       backend: backend,
       deterministic: deterministic,
+      parts: parts,
     );
 
     final caps = native.capabilities;

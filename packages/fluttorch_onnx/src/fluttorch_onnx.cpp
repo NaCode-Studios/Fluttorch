@@ -119,6 +119,14 @@ struct ft_model {
   std::vector<std::string> input_names;
   std::vector<std::string> output_names;
 
+  // Weights that live beside the graph, held for the same reason the artifact
+  // is: the session reads them while it is created and borrows nothing after.
+  struct part {
+    std::string name;
+    std::vector<uint8_t> data;
+  };
+  std::vector<part> parts;
+
   ~ft_model() {
     if (session != nullptr) ort()->ReleaseSession(session);
     if (memory != nullptr) ort()->ReleaseMemoryInfo(memory);
@@ -159,10 +167,26 @@ ft_status_t ft_capabilities(const char* backend, ft_capabilities_t* out) {
   return FT_OK;
 }
 
-ft_status_t ft_load(const uint8_t* artifact, int64_t length, const char* backend,
-                    int32_t deterministic, ft_model_t** out_model) {
+ft_status_t ft_load_parts(const uint8_t* artifact, int64_t length,
+                          const ft_part_t* parts, int32_t part_count,
+                          const char* backend, int32_t deterministic,
+                          ft_model_t** out_model) {
   if (artifact == nullptr || out_model == nullptr) {
     return fail(FT_ERROR_INVALID_ARGUMENT, "artifact and out_model are required");
+  }
+  if (part_count < 0 || (part_count > 0 && parts == nullptr)) {
+    return fail(FT_ERROR_INVALID_ARGUMENT,
+                "part_count disagrees with the parts it points at");
+  }
+  for (int32_t i = 0; i < part_count; ++i) {
+    if (parts[i].name == nullptr || parts[i].data == nullptr || parts[i].length <= 0) {
+      // Named rather than skipped. A part that arrives empty is a copy that
+      // failed, and continuing without it hands the session a graph whose
+      // weights it will look for and not find.
+      return fail(FT_ERROR_INVALID_ARGUMENT,
+                  std::string("part ") + std::to_string(i) +
+                      " has no name or no bytes");
+    }
   }
   if (length <= 0) {
     return fail(FT_ERROR_ARTIFACT_UNREADABLE, "the artifact is empty");
@@ -194,6 +218,40 @@ ft_status_t ft_load(const uint8_t* artifact, int64_t length, const char* backend
     // stop agreeing bit for bit, which is the whole of what this flag buys.
     discard(ort()->SetIntraOpNumThreads(options, 1));
     discard(ort()->SetInterOpNumThreads(options, 1));
+  }
+
+  if (part_count > 0) {
+    // The graph references its weights by file name and ONNX Runtime would
+    // normally resolve that against the directory the model was read from. A
+    // buffer has no directory, so the names are registered against the bytes
+    // instead and nothing is ever looked up on disk.
+    //
+    // The buffers are held by the model rather than borrowed: the session reads
+    // them while it is being created, and a caller that freed its copy in
+    // between would be handing the initialisers to a graph that had not read
+    // them yet.
+    model->parts.reserve(static_cast<size_t>(part_count));
+    std::vector<const ORTCHAR_T*> names;
+    std::vector<char*> buffers;
+    std::vector<size_t> lengths;
+    names.reserve(static_cast<size_t>(part_count));
+    buffers.reserve(static_cast<size_t>(part_count));
+    lengths.reserve(static_cast<size_t>(part_count));
+    for (int32_t i = 0; i < part_count; ++i) {
+      model->parts.push_back(
+          {parts[i].name,
+           std::vector<uint8_t>(parts[i].data, parts[i].data + parts[i].length)});
+      names.push_back(model->parts.back().name.c_str());
+      buffers.push_back(reinterpret_cast<char*>(model->parts.back().data.data()));
+      lengths.push_back(model->parts.back().data.size());
+    }
+    status = from_ort(
+        ort()->AddExternalInitializersFromFilesInMemory(
+            options, names.data(), buffers.data(), lengths.data(),
+            static_cast<size_t>(part_count)),
+        FT_ERROR_ARTIFACT_UNREADABLE,
+        "registering the weights that live beside the graph");
+    if (status != FT_OK) return status;
   }
 
   status = from_ort(
@@ -235,6 +293,14 @@ ft_status_t ft_load(const uint8_t* artifact, int64_t length, const char* backend
 
   *out_model = model.release();
   return FT_OK;
+}
+
+ft_status_t ft_load(const uint8_t* artifact, int64_t length, const char* backend,
+                    int32_t deterministic, ft_model_t** out_model) {
+  // A model with no parts is the same load, and saying so once here keeps the
+  // two entry points from drifting into two slightly different loaders.
+  return ft_load_parts(artifact, length, nullptr, 0, backend, deterministic,
+                       out_model);
 }
 
 const char* ft_model_backend(ft_model_t* model) {

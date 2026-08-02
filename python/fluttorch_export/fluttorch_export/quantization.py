@@ -7,7 +7,7 @@ to move by are a property of how it was quantized, and a gate that does not know
 the recipe is a gate holding an int4 model to a full-precision bound.
 
 Nothing here invents a scheme. Each recipe is the XNNPACK quantizer configured
-one way, and the names match what ``Tolerance.startingPointFor`` recognises on
+one way, and the names match what ``Tolerance.boundFor`` recognises on
 the Dart side; a recipe added here without a tolerance there produces an export
 the gate cannot judge.
 """

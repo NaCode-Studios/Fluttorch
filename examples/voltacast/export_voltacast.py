@@ -17,19 +17,26 @@ It proves the thing the project exists for on a model that can go wrong: a
 Transformer with softmax attention, 340 nodes, measured against references
 captured from the source model on real windows.
 
-It writes two bundles, and the reason is the point of the whole runtime layer.
+It writes three bundles, and the reason is the point of the whole runtime layer.
 ExecuTorch lowers this model and then fails to execute it, identically under its
 own Python runtime, so the failure is upstream rather than at this seam. LiteRT
-carries the same model, from the same weights and the same golden windows,
-through the same gate, and agrees with the notebook to within float32 rounding.
-One manifest, one set of references, two engines, and the one that works is the
-one the example is measured on.
+and ONNX Runtime both carry the same model, from the same weights and the same
+golden windows, through the same gate, and both agree with the notebook to
+within float32 rounding. One manifest, one set of references, three engines, and
+two of them run it.
 
-ONNX Runtime is the third and is refused for a reason of ours rather than
-theirs: torch.onnx moves 3.4 MB of weights into a sidecar beside the graph, and
-this toolchain refuses that bundle rather than writing one whose hash covers the
-graph and not the numbers. That is issue 65, and VoltaCast is exactly the size
-of model that triggers it.
+The ONNX bundle is the one that is more than one file. torch.onnx leaves 506 kB
+of graph structure in the artifact and puts 3.4 MB of weights beside it,
+referenced by file name. That used to be refused, because the weight hash was
+taken over the artifact and would have covered the shape of a model and none of
+its numbers. The manifest now names the parts, the hash covers them, and the
+binding is handed the bytes under the name the graph uses rather than being
+asked to find a file it has no path to.
+
+So VoltaCast is what made that path exist, and it is also what measures it: a
+graph loaded without its weights still parses, still declares every shape this
+manifest promises, and still answers. What says the weights arrived is the
+forecast matching references captured before any of this was split up.
 
 It stops at the model boundary, and that is a statement rather than an omission.
 VoltaCast's preprocessing is not expressible in the manifest and should not be.
@@ -74,6 +81,7 @@ CHECKPOINT = HERE / "checkpoint" / "transformer.pt"
 DATA = HERE / "checkpoint" / "italy_load_weather.parquet"
 OUT_EXECUTORCH = ROOT / "testdata" / "voltacast"
 OUT_LITERT = ROOT / "testdata" / "voltacast_litert"
+OUT_ONNX = ROOT / "testdata" / "voltacast_onnx"
 
 #: Golden windows, taken from the test split so they are hours the model never
 #: trained on. Four of them, at midnight, which is the origin a day-ahead
@@ -142,6 +150,7 @@ def main() -> int:
     for out_dir, runtime, backend in (
         (OUT_EXECUTORCH, "executorch", "portable"),
         (OUT_LITERT, "litert", "cpu"),
+        (OUT_ONNX, "onnx", "cpu"),
     ):
         out_dir.mkdir(parents=True, exist_ok=True)
         result = export_model(

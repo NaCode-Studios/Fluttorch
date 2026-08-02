@@ -30,6 +30,7 @@ final _coreml = Directory('../../testdata/coreml');
 final _taps = Directory('../../testdata/taps');
 final _mps = Directory('../../testdata/mps');
 final _voltacast = Directory('../../testdata/voltacast');
+final _multiIo = Directory('../../testdata/multi_io');
 
 void main() {
   if (!_library.existsSync() || !_quantized.existsSync()) {
@@ -47,11 +48,13 @@ void main() {
   // way the matrix survives contact with a second machine: the same suite has
   // four columns here and one on a laptop that never built a delegate.
   group('M24 · the same goldens across every backend this machine has', () {
+    // One export per backend of the convolutional model, not the two-layer one.
+    // A network of two linear layers has nowhere for two delegates to disagree,
+    // so the matrix came out ordered the way arithmetic says it should and
+    // proved the measurement worked rather than that it was worth taking.
     final candidates = <String, Directory>{
-      'xnnpack': _quantized,
-      'portable': _taps,
-      'coreml': _coreml,
-      'mps': _mps,
+      for (final backend in ['portable', 'xnnpack', 'coreml', 'mps', 'mlx'])
+        backend: Directory('../../testdata/matrix/$backend'),
     };
 
     late ParityMatrix matrix;
@@ -63,12 +66,10 @@ void main() {
         if (!entry.value.existsSync()) continue;
         if (!bindings.backends().contains(entry.key)) continue;
         final goldens = await DirectoryGoldenBundle.open(
-          '${entry.value.path}/two_layer.fluttorch.json',
+          '${entry.value.path}/matrix.fluttorch.json',
         );
         final model = await ExecuTorchRuntime(bindings).load(
-          artifact: await File(
-            '${entry.value.path}/two_layer.pte',
-          ).readAsBytes(),
+          artifact: await File('${entry.value.path}/matrix.pte').readAsBytes(),
           manifest: goldens.manifest,
           backend: entry.key,
         );
@@ -86,7 +87,9 @@ void main() {
 
     test('it covers more than one backend, or it is not a matrix', () {
       expect(matrix.backends.length, greaterThan(1));
-      expect(matrix.goldenIds, hasLength(4));
+      // Eight rather than four, because the tolerance this model needs is read
+      // off this suite and four numbers is not a distribution.
+      expect(matrix.goldenIds, hasLength(8));
       // Every cell measured. A hole reads as agreement in a table, which is the
       // thing this whole package exists to stop.
       for (final backend in matrix.backends) {
@@ -104,29 +107,50 @@ void main() {
       expect(matrix.passes, isTrue, reason: matrix.describe());
     });
 
-    test('the quantized column is the one that moved', () {
-      // The matrix earns its place here. Three backends carry the model at full
-      // precision and agree with the source to within float32; one carries it at
-      // int8 and does not. A table where every column read the same would mean
-      // the quantized artifact was not quantized.
-      final exact = matrix.backends.where((b) => b != 'xnnpack');
+    test('the half-precision columns are the ones that moved', () {
+      // The matrix earns its place here. The same weights and the same goldens
+      // go to every delegate, and the ones that lower to float16 land three to
+      // four orders of magnitude further from the source than the ones that
+      // stay at float32. A table where every column read the same would mean
+      // the precision the manifest records was not the precision that ran.
+      //
+      // Read off the artifact rather than the backend name, because which
+      // delegate halves precision is that delegate's decision and it is
+      // recorded per export rather than assumed here.
+      final half = matrix.backends.where(
+        (b) => matrix.precisionOf(b) == 'float16',
+      );
+      final full = matrix.backends.where(
+        (b) => matrix.precisionOf(b) != 'float16',
+      );
+      if (half.isEmpty || full.isEmpty) {
+        markTestSkipped(
+          'this machine linked only ${matrix.backends.join(", ")}, so there is '
+          'no precision difference to order',
+        );
+        return;
+      }
+
       for (final id in matrix.goldenIds) {
-        final quantized = matrix
-            .at(backend: 'xnnpack', goldenId: id)!
-            .tensors
-            .single
-            .maxRelative;
-        for (final backend in exact) {
-          final other = matrix
-              .at(backend: backend, goldenId: id)!
+        for (final low in half) {
+          final moved = matrix
+              .at(backend: low, goldenId: id)!
               .tensors
               .single
               .maxRelative;
-          expect(
-            quantized,
-            greaterThan(other),
-            reason: '$id: xnnpack(int8) should move more than $backend',
-          );
+          for (final exact in full) {
+            expect(
+              moved,
+              greaterThan(
+                matrix
+                    .at(backend: exact, goldenId: id)!
+                    .tensors
+                    .single
+                    .maxRelative,
+              ),
+              reason: '$id: $low(float16) should move more than $exact',
+            );
+          }
         }
       }
     });
@@ -195,7 +219,7 @@ void main() {
       final reports = await measureParity(
         model,
         goldens: goldens,
-        tolerance: Tolerance.startingPointFor(null),
+        tolerance: Tolerance.boundFor(null),
       );
 
       expect(reports.every((r) => !r.passes), isTrue);
@@ -277,7 +301,7 @@ void main() {
       final reports = await measureParity(
         model,
         goldens: goldens,
-        tolerance: Tolerance.startingPointFor(null),
+        tolerance: Tolerance.boundFor(null),
       );
       expect(reports.every((r) => !r.passes), isTrue);
     });
@@ -596,6 +620,86 @@ void main() {
             'if this now passes, ExecuTorch executes the model and this whole '
             'group should become the parity gate it was written to be',
       );
+    });
+  });
+
+  // Every other export in this repository returns one tensor, so the code that
+  // keeps a second one in the right order has been read and never run. This
+  // fixture exists to run it.
+  //
+  // Its two inputs share a shape and so do its two outputs, which is the choice
+  // that gives the group its teeth: a pair that differed in shape would be
+  // caught on the way past by the shape check, and the test would then pass for
+  // a reason that has nothing to do with ordering.
+  group('two inputs and two outputs, kept apart', () {
+    late DirectoryGoldenBundle goldens;
+    late LoadedModel model;
+
+    setUpAll(() async {
+      goldens = await DirectoryGoldenBundle.open(
+        '${_multiIo.path}/multi_io.fluttorch.json',
+      );
+      model = await ExecuTorchRuntime(bindings).load(
+        artifact: await File('${_multiIo.path}/multi_io.pte').readAsBytes(),
+        manifest: goldens.manifest,
+        backend: 'portable',
+      );
+    });
+
+    tearDownAll(() async => model.dispose());
+
+    test('the manifest carries two of each, and they look alike', () {
+      expect(model.manifest.inputs.map((s) => s.name), ['left', 'right']);
+      expect(model.manifest.outputs.map((s) => s.name), [
+        'primary',
+        'auxiliary',
+      ]);
+      expect(
+        model.manifest.inputNamed('right').shape,
+        model.manifest.inputNamed('left').shape,
+        reason: 'matching shapes are what remove the shape check as a crutch',
+      );
+      expect(
+        model.manifest.outputNamed('auxiliary').shape,
+        model.manifest.outputNamed('primary').shape,
+      );
+    });
+
+    test('the gate measures both outputs, not just the first', () async {
+      await expectParity(model, goldens: goldens);
+
+      // A gate that replayed one of the two would pass this model while saying
+      // nothing about half of it, and would say it in the same words.
+      final reports = await measureParity(model, goldens: goldens);
+      expect(reports, hasLength(4));
+      for (final report in reports) {
+        expect(report.tensors, hasLength(2));
+      }
+    });
+
+    test('the inputs are threaded in order, not merely accepted', () async {
+      final golden = goldens.cases.first;
+      final left = await goldens.tensor(
+        golden.inputKeys[0],
+        model.manifest.inputs[0],
+      );
+      final right = await goldens.tensor(
+        golden.inputKeys[1],
+        model.manifest.inputs[1],
+      );
+
+      final straight = await model.run([left, right]);
+      // The same two buffers in the same two positions, carrying each other's
+      // values. A binding that passed the first buffer twice, or dropped the
+      // second, returns the same numbers for both of these; one that threads
+      // them through in order cannot.
+      final crossed = await model.run([
+        Tensor.view(spec: model.manifest.inputs[0], bytes: right.bytes),
+        Tensor.view(spec: model.manifest.inputs[1], bytes: left.bytes),
+      ]);
+
+      expect(straight[0].asFloat32List(), isNot(crossed[0].asFloat32List()));
+      expect(straight[1].asFloat32List(), isNot(crossed[1].asFloat32List()));
     });
   });
 }

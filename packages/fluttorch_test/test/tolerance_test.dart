@@ -95,18 +95,18 @@ void main() {
 
   group('starting points per recipe', () {
     test('full precision is the tightest', () {
-      final exact = Tolerance.startingPointFor(null)!;
-      final static8 = Tolerance.startingPointFor('int8-static')!;
+      final exact = Tolerance.boundFor(null)!;
+      final static8 = Tolerance.boundFor('int8-static')!;
       expect(exact.maxAbsolute, lessThan(static8.maxAbsolute));
       expect(exact.minCosine!, greaterThan(static8.minCosine!));
     });
 
     test('looser quantization gets a looser bound, in order', () {
       final recipes = [
-        Tolerance.startingPointFor(null)!,
-        Tolerance.startingPointFor('int8-dynamic')!,
-        Tolerance.startingPointFor('int8-static')!,
-        Tolerance.startingPointFor('int4-weight-only')!,
+        Tolerance.boundFor(null)!,
+        Tolerance.boundFor('int8-dynamic')!,
+        Tolerance.boundFor('int8-static')!,
+        Tolerance.boundFor('int4-weight-only')!,
       ];
       for (var i = 1; i < recipes.length; i++) {
         expect(
@@ -124,18 +124,18 @@ void main() {
 
     test('every known recipe has a starting point, and vice versa', () {
       for (final r in Tolerance.knownRecipes) {
-        expect(Tolerance.startingPointFor(r), isNotNull, reason: r);
+        expect(Tolerance.boundFor(r), isNotNull, reason: r);
       }
     });
 
     test('an unrecognised recipe returns null instead of inventing one', () {
-      expect(Tolerance.startingPointFor('int2-magic'), isNull);
-      expect(Tolerance.startingPointFor('fp8-e4m3'), isNull);
+      expect(Tolerance.boundFor('int2-magic'), isNull);
+      expect(Tolerance.boundFor('fp8-e4m3'), isNull);
     });
 
     test('every starting point constrains all three, so none fails open', () {
       for (final r in [null, ...Tolerance.knownRecipes]) {
-        final t = Tolerance.startingPointFor(r)!;
+        final t = Tolerance.boundFor(r)!;
         expect(t.maxAbsolute, greaterThan(0), reason: '$r');
         expect(t.maxRelative, greaterThan(0), reason: '$r');
         expect(t.minCosine, isNotNull, reason: '$r');
@@ -157,15 +157,15 @@ void main() {
   group('M23 · a precision the delegate lowered at', () {
     test('float32 and absence mean the same thing', () {
       expect(
-        Tolerance.startingPointFor(null, precision: 'float32')!.maxRelative,
-        Tolerance.startingPointFor(null)!.maxRelative,
+        Tolerance.boundFor(null, precision: 'float32')!.maxRelative,
+        Tolerance.boundFor(null)!.maxRelative,
       );
     });
 
     test('float16 is looser than full precision and tighter than int8', () {
-      final half = Tolerance.startingPointFor(null, precision: 'float16')!;
-      final full = Tolerance.startingPointFor(null)!;
-      final int8 = Tolerance.startingPointFor('int8-dynamic')!;
+      final half = Tolerance.boundFor(null, precision: 'float16')!;
+      final full = Tolerance.boundFor(null)!;
+      final int8 = Tolerance.boundFor('int8-dynamic')!;
 
       expect(half.maxRelative, greaterThan(full.maxRelative));
       // The two have to stay distinguishable. A half-precision bound as wide as
@@ -177,12 +177,9 @@ void main() {
     test('a recipe and a precision compound rather than replace', () {
       // int8 on a half-precision GPU is wrong in both ways at once, and the
       // bound has to be at least as wide as either alone.
-      final both = Tolerance.startingPointFor(
-        'int8-dynamic',
-        precision: 'float16',
-      )!;
-      final int8 = Tolerance.startingPointFor('int8-dynamic')!;
-      final half = Tolerance.startingPointFor(null, precision: 'float16')!;
+      final both = Tolerance.boundFor('int8-dynamic', precision: 'float16')!;
+      final int8 = Tolerance.boundFor('int8-dynamic')!;
+      final half = Tolerance.boundFor(null, precision: 'float16')!;
 
       expect(both.maxAbsolute, greaterThanOrEqualTo(int8.maxAbsolute));
       expect(both.maxAbsolute, greaterThanOrEqualTo(half.maxAbsolute));
@@ -193,8 +190,8 @@ void main() {
     test('a precision nobody measured a bound for returns null', () {
       // Same rule as an unknown recipe: inventing a number for a scheme this
       // build has never seen would put it on a gate nobody chose.
-      expect(Tolerance.startingPointFor(null, precision: 'float8'), isNull);
-      expect(Tolerance.startingPointFor(null, precision: 'bfloat16'), isNull);
+      expect(Tolerance.boundFor(null, precision: 'float8'), isNull);
+      expect(Tolerance.boundFor(null, precision: 'bfloat16'), isNull);
     });
   });
 }

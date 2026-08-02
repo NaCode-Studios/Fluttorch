@@ -2,6 +2,7 @@
 library;
 
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:fluttorch/fluttorch.dart';
 import 'package:fluttorch_onnx/fluttorch_onnx.dart';
@@ -22,6 +23,8 @@ final _library = File(
   '${Platform.isMacOS ? ".dylib" : ".so"}',
 );
 final _export = Directory('../../testdata/onnx');
+final _multiIo = Directory('../../testdata/multi_io_onnx');
+final _voltacast = Directory('../../testdata/voltacast_onnx');
 
 void main() {
   if (!_library.existsSync() || !_export.existsSync()) {
@@ -115,5 +118,120 @@ void main() {
         throwsA(isA<BackendUnavailableException>()),
       );
     });
+  });
+
+  // The same fixture the ExecuTorch suite runs, over this engine. Each shim
+  // converts its own runtime's output list into ours, so one of them keeping a
+  // pair straight says nothing about the other two.
+  group('two inputs and two outputs, kept apart', () {
+    late DirectoryGoldenBundle multiIo;
+    late LoadedModel multiIoModel;
+
+    setUpAll(() async {
+      multiIo = await DirectoryGoldenBundle.open(
+        '${_multiIo.path}/multi_io.fluttorch.json',
+      );
+      multiIoModel = await runtime.load(
+        artifact: await File('${_multiIo.path}/multi_io.onnx').readAsBytes(),
+        manifest: multiIo.manifest,
+        backend: 'cpu',
+      );
+    });
+
+    tearDownAll(() async => multiIoModel.dispose());
+
+    test('the gate measures both outputs, not just the first', () async {
+      await expectParity(multiIoModel, goldens: multiIo);
+
+      final reports = await measureParity(multiIoModel, goldens: multiIo);
+      expect(reports, hasLength(4));
+      for (final report in reports) {
+        expect(report.tensors, hasLength(2));
+      }
+    });
+
+    test('the inputs are threaded in order, not merely accepted', () async {
+      final golden = multiIo.cases.first;
+      final left = await multiIo.tensor(
+        golden.inputKeys[0],
+        multiIoModel.manifest.inputs[0],
+      );
+      final right = await multiIo.tensor(
+        golden.inputKeys[1],
+        multiIoModel.manifest.inputs[1],
+      );
+
+      final straight = await multiIoModel.run([left, right]);
+      // The same two buffers in the same two positions, carrying each other's
+      // values. A binding that passed the first buffer twice, or dropped the
+      // second, returns the same numbers for both of these.
+      final crossed = await multiIoModel.run([
+        Tensor.view(spec: multiIoModel.manifest.inputs[0], bytes: right.bytes),
+        Tensor.view(spec: multiIoModel.manifest.inputs[1], bytes: left.bytes),
+      ]);
+
+      expect(straight[0].asFloat32List(), isNot(crossed[0].asFloat32List()));
+      expect(straight[1].asFloat32List(), isNot(crossed[1].asFloat32List()));
+    });
+  });
+
+  // VoltaCast is the model this whole path exists for. torch.onnx puts 3.4 MB
+  // of its weights in a file beside the graph, leaving 506 kB of structure in
+  // the artifact, and until now the export refused rather than write a bundle
+  // whose hash covered the shape of a model and none of its numbers.
+  group('VoltaCast, whose weights live beside its graph', () {
+    late DirectoryGoldenBundle bundle;
+    late Uint8List artifact;
+    late Map<String, Uint8List> parts;
+    late LoadedModel voltacast;
+
+    setUpAll(() async {
+      bundle = await DirectoryGoldenBundle.open(
+        '${_voltacast.path}/voltacast.fluttorch.json',
+      );
+      artifact = await File('${_voltacast.path}/voltacast.onnx').readAsBytes();
+      parts = await bundle.parts();
+      voltacast = await runtime.load(
+        artifact: artifact,
+        manifest: bundle.manifest,
+        backend: 'cpu',
+        parts: parts,
+      );
+    });
+
+    tearDownAll(() async => voltacast.dispose());
+
+    test('the graph is the small half, and the weights are the other', () {
+      expect(bundle.manifest.parts, hasLength(1));
+      expect(bundle.manifest.parts.single.size, greaterThan(artifact.length));
+    });
+
+    test('the goldens hold, on a model whose numbers arrived separately', () {
+      // The exit criterion. Loading was never the hard part: a graph without
+      // its weights loads too, declares the same shapes, and answers. What
+      // says the weights actually arrived is the forecast matching references
+      // captured from the source model before any of this was split up.
+      return expectParity(voltacast, goldens: bundle);
+    });
+
+    test(
+      'without the part it refuses rather than running on structure',
+      () async {
+        await expectLater(
+          runtime.load(
+            artifact: artifact,
+            manifest: bundle.manifest,
+            backend: 'cpu',
+          ),
+          throwsA(
+            isA<BundlePartMissingException>().having(
+              (e) => e.missing,
+              'missing',
+              ['voltacast.onnx.data'],
+            ),
+          ),
+        );
+      },
+    );
   });
 }
