@@ -3,15 +3,69 @@ import 'dart:typed_data';
 import 'dtype.dart';
 import 'errors.dart';
 
+/// The axis order of a rank-4 tensor, naming which axes are spatial.
+///
+/// Absence is not a default. A spec that declares no layout says nothing about
+/// which axes are height and width, and a consumer must refuse to resize or
+/// crop rather than pick one: NCHW and NHWC read the same bytes as different
+/// pictures, and both answers look plausible.
+///
+/// Only rank 4 carries a layout. A rank-2 table has no height, and naming its
+/// axes would be a claim nobody could check.
+enum TensorLayout {
+  /// Batch, channel, height, width. What `torch` produces by default.
+  nchw('nchw', channelAxis: 1, heightAxis: 2, widthAxis: 3),
+
+  /// Batch, height, width, channel. What most mobile runtimes prefer, and what
+  /// a camera frame already is.
+  nhwc('nhwc', channelAxis: 3, heightAxis: 1, widthAxis: 2);
+
+  const TensorLayout(
+    this.wireName, {
+    required this.channelAxis,
+    required this.heightAxis,
+    required this.widthAxis,
+  });
+
+  /// Name used in the manifest, fixed independently of the Dart identifier so
+  /// renaming a member never invalidates an artifact already on disk.
+  final String wireName;
+
+  final int channelAxis;
+  final int heightAxis;
+  final int widthAxis;
+
+  /// Both layouts put the batch first, so this is a constant rather than a
+  /// field. It is named anyway: reading `batchAxis` beats reading `0`.
+  int get batchAxis => 0;
+
+  /// The rank a layout describes. Nothing else may declare one.
+  static const int rank = 4;
+
+  /// Parses [wire], or returns null when this build does not know it.
+  static TensorLayout? tryParse(String wire) {
+    for (final l in values) {
+      if (l.wireName == wire) return l;
+    }
+    return null;
+  }
+}
+
 /// The declared shape and type of one model input or output.
 ///
 /// A dimension of [dynamicDim] is decided at run time. Everything else is fixed
 /// at export, and the generated bindings turn it into a compile-time signature.
 final class TensorSpec {
+  /// A layout is only meaningful on a rank-4 shape, which
+  /// [ManifestCodec.decode] enforces rather than this constructor: `shape.length`
+  /// is not reachable from a constant expression, and the generated bindings
+  /// declare their specs `const`. Decoding is the path every manifest from disk
+  /// takes, so that is where the check belongs anyway.
   const TensorSpec({
     required this.name,
     required this.dtype,
     required this.shape,
+    this.layout,
   });
 
   /// Marks a dimension whose extent is not known until run time.
@@ -26,6 +80,13 @@ final class TensorSpec {
 
   /// Dimensions, innermost last. [dynamicDim] marks a dynamic extent.
   final List<int> shape;
+
+  /// Which axes are spatial, or null when the export did not say.
+  ///
+  /// Null is the honest answer for every tensor that is not an image, and it is
+  /// also what a manifest written before this field existed means. A consumer
+  /// that needs the answer refuses rather than assuming.
+  final TensorLayout? layout;
 
   int get rank => shape.length;
 

@@ -104,7 +104,11 @@ void _tensorType(
     ..writeln('  static const TensorSpec spec = TensorSpec(')
     ..writeln("    name: '${spec.name}',")
     ..writeln('    dtype: DType.${spec.dtype.name},')
-    ..writeln('    shape: [${spec.shape.join(', ')}],')
+    ..writeln('    shape: [${spec.shape.join(', ')}],');
+  if (spec.layout != null) {
+    b.writeln('    layout: TensorLayout.${spec.layout!.name},');
+  }
+  b
     ..writeln('  );')
     ..writeln();
 
@@ -142,6 +146,7 @@ void _tensorType(
       ..writeln('  /// An all-zero tensor, for use as a destination buffer.')
       ..writeln('  factory $type.zeros() => $type._(Tensor.zeros(spec));')
       ..writeln();
+    if (isInput) _spatialFactory(b, type, spec, manifest, listType);
   }
 
   if (spec.isDynamic) {
@@ -208,6 +213,198 @@ void _tensorType(
   if (isInput) _preprocessing(b, type, spec, manifest);
 }
 
+// ── the spatial steps, which build the tensor rather than mutate it ───────────
+
+/// Emits the constructor that turns a source image into this tensor.
+///
+/// Resize and crop change the extent, so they cannot join the in-place
+/// [_preprocessing] pass: they are what takes a frame of whatever size the
+/// camera produced and yields the shape the export declared. Nothing is emitted
+/// unless the manifest records one, and [checkGeneratable] has already refused a
+/// manifest that records one without a layout to perform it against.
+void _spatialFactory(
+  StringBuffer b,
+  String type,
+  TensorSpec spec,
+  ModelManifest manifest,
+  String listType,
+) {
+  final steps = manifest.preprocessing
+      .where((s) => s is ResizeStep || s is CenterCropStep)
+      .toList();
+  if (steps.isEmpty || spec.dtype != DType.float32) return;
+
+  final layout = spec.layout!;
+  final batch = spec.shape[layout.batchAxis];
+  final channels = spec.shape[layout.channelAxis];
+
+  // Indexing is the whole reason the layout had to be recorded. These two
+  // expressions are the difference between reading a picture and reading its
+  // channels transposed into its rows.
+  final at = layout == TensorLayout.nchw
+      ? '((n * channels + c) * h + y) * w + x'
+      : '((n * h + y) * w + x) * channels + c';
+
+  b
+    ..writeln('  /// Builds this tensor from a source image of [height] by')
+    ..writeln('  /// [width], applying the spatial steps the export recorded.')
+    ..writeln('  ///')
+    ..writeln('  /// Separate from [preprocess] because these steps change the')
+    ..writeln('  /// number of elements, so they cannot run in place. The')
+    ..writeln('  /// elementwise steps stay there, and the manifest is refused')
+    ..writeln('  /// unless it records the spatial ones first, so calling this')
+    ..writeln('  /// and then [preprocess] replays the recorded order exactly.')
+    ..writeln('  ///')
+    ..writeln('  /// Throws [TensorShapeException] unless [values] holds')
+    ..writeln('  /// $batch × $channels × [height] × [width] elements.')
+    ..writeln('  factory $type.fromSource(')
+    ..writeln('    $listType values, {')
+    ..writeln('    required int height,')
+    ..writeln('    required int width,')
+    ..writeln('  }) {')
+    ..writeln('    const batch = $batch;')
+    ..writeln('    const channels = $channels;')
+    ..writeln('    final expected = batch * channels * height * width;')
+    ..writeln('    if (values.length != expected) {')
+    ..writeln('      throw TensorShapeException(')
+    ..writeln(
+      "        'expected \$expected values for a \${height}x\$width source, '",
+    )
+    ..writeln("        'got \${values.length}',")
+    ..writeln("        tensorName: '${spec.name}',")
+    ..writeln('      );')
+    ..writeln('    }')
+    ..writeln('    // ${layout.wireName}: the axis order the manifest declared.')
+    ..writeln('    int at(int n, int c, int y, int x, int h, int w) =>')
+    ..writeln('        $at;')
+    ..writeln('    var src = values;')
+    ..writeln('    var sh = height;')
+    ..writeln('    var sw = width;');
+
+  for (final step in steps) {
+    switch (step) {
+      case ResizeStep(:final height, :final width, :final interpolation):
+        _emitResize(b, height, width, interpolation);
+      case CenterCropStep(:final height, :final width):
+        _emitCenterCrop(b, height, width);
+      default:
+        throw StateError('not a spatial step: ${step.kind}');
+    }
+  }
+
+  b
+    ..writeln('    return $type(src);')
+    ..writeln('  }')
+    ..writeln();
+}
+
+void _emitResize(StringBuffer b, int height, int width, String interpolation) {
+  b
+    ..writeln('    // resize to $height x $width, $interpolation')
+    ..writeln('    {')
+    ..writeln('      const oh = $height;')
+    ..writeln('      const ow = $width;')
+    ..writeln('      final dst = Float32List(batch * channels * oh * ow);')
+    ..writeln('      final ry = sh / oh;')
+    ..writeln('      final rx = sw / ow;')
+    ..writeln('      for (var n = 0; n < batch; n++) {')
+    ..writeln('        for (var c = 0; c < channels; c++) {')
+    ..writeln('          for (var y = 0; y < oh; y++) {')
+    ..writeln('            for (var x = 0; x < ow; x++) {');
+
+  if (interpolation == 'nearest') {
+    // Torch's `nearest` samples at the top-left corner rather than the pixel
+    // centre, which is the one filter where the half-pixel rule does not apply.
+    // Reproducing its asymmetry is the point: a centred nearest would shift the
+    // picture by half a source pixel and still look like a picture.
+    b
+      ..writeln('              var iy = (y * ry).floor();')
+      ..writeln('              var ix = (x * rx).floor();')
+      ..writeln('              if (iy > sh - 1) iy = sh - 1;')
+      ..writeln('              if (ix > sw - 1) ix = sw - 1;')
+      ..writeln(
+        '              dst[at(n, c, y, x, oh, ow)] = '
+        'src[at(n, c, iy, ix, sh, sw)];',
+      );
+  } else {
+    // Half-pixel centres, which is torch's align_corners=False. Clamping the
+    // coordinate at zero rather than the index is what makes the first output
+    // pixel a copy of the first source pixel instead of an extrapolation.
+    b
+      ..writeln('              var fy = (y + 0.5) * ry - 0.5;')
+      ..writeln('              if (fy < 0) fy = 0;')
+      ..writeln('              var fx = (x + 0.5) * rx - 0.5;')
+      ..writeln('              if (fx < 0) fx = 0;')
+      ..writeln('              final y0 = fy.floor();')
+      ..writeln('              final x0 = fx.floor();')
+      ..writeln('              final y1 = y0 + 1 < sh ? y0 + 1 : sh - 1;')
+      ..writeln('              final x1 = x0 + 1 < sw ? x0 + 1 : sw - 1;')
+      ..writeln('              final wy = fy - y0;')
+      ..writeln('              final wx = fx - x0;')
+      ..writeln('              final p00 = src[at(n, c, y0, x0, sh, sw)];')
+      ..writeln('              final p01 = src[at(n, c, y0, x1, sh, sw)];')
+      ..writeln('              final p10 = src[at(n, c, y1, x0, sh, sw)];')
+      ..writeln('              final p11 = src[at(n, c, y1, x1, sh, sw)];')
+      ..writeln('              dst[at(n, c, y, x, oh, ow)] =')
+      ..writeln('                  (1 - wy) * ((1 - wx) * p00 + wx * p01) +')
+      ..writeln('                  wy * ((1 - wx) * p10 + wx * p11);');
+  }
+
+  b
+    ..writeln('            }')
+    ..writeln('          }')
+    ..writeln('        }')
+    ..writeln('      }')
+    ..writeln('      src = dst;')
+    ..writeln('      sh = oh;')
+    ..writeln('      sw = ow;')
+    ..writeln('    }');
+}
+
+void _emitCenterCrop(StringBuffer b, int height, int width) {
+  b
+    ..writeln('    // center_crop $height x $width')
+    ..writeln('    {')
+    ..writeln('      const oh = $height;')
+    ..writeln('      const ow = $width;')
+    ..writeln('      if (sh < oh || sw < ow) {')
+    ..writeln('        throw TensorShapeException(')
+    ..writeln(
+      "          'cannot crop \${oh}x\$ow out of \${sh}x\$sw', "
+      "tensorName: spec.name,",
+    )
+    ..writeln('        );')
+    ..writeln('      }')
+    // torchvision computes the offset with Python's round, which breaks a tie
+    // to the even neighbour. Dart's round breaks it away from zero, so the two
+    // disagree on exactly the odd margins: 2.5 is 2 in Python and 3 in Dart.
+    // That is one row of the crop, which still looks like a picture and is not
+    // the picture the model was trained on.
+    ..writeln('      int half(int margin) {')
+    ..writeln('        final v = margin / 2;')
+    ..writeln('        final f = v.floor();')
+    ..writeln('        if (v - f != 0.5) return v.round();')
+    ..writeln('        return f.isEven ? f : f + 1;')
+    ..writeln('      }')
+    ..writeln('      final top = half(sh - oh);')
+    ..writeln('      final left = half(sw - ow);')
+    ..writeln('      final dst = Float32List(batch * channels * oh * ow);')
+    ..writeln('      for (var n = 0; n < batch; n++) {')
+    ..writeln('        for (var c = 0; c < channels; c++) {')
+    ..writeln('          for (var y = 0; y < oh; y++) {')
+    ..writeln('            for (var x = 0; x < ow; x++) {')
+    ..writeln('              dst[at(n, c, y, x, oh, ow)] =')
+    ..writeln('                  src[at(n, c, top + y, left + x, sh, sw)];')
+    ..writeln('            }')
+    ..writeln('          }')
+    ..writeln('        }')
+    ..writeln('      }')
+    ..writeln('      src = dst;')
+    ..writeln('      sh = oh;')
+    ..writeln('      sw = ow;')
+    ..writeln('    }');
+}
+
 // ── preprocessing, generated from the manifest ─────────────────────────────────
 
 void _preprocessing(
@@ -216,7 +413,13 @@ void _preprocessing(
   TensorSpec spec,
   ModelManifest manifest,
 ) {
-  if (manifest.preprocessing.isEmpty) return;
+  // Only the elementwise steps land here. A pipeline that is nothing but resize
+  // and crop is fully handled by the constructor, and an empty preprocess()
+  // would invite a caller to think it still had something to do.
+  final elementwise = manifest.preprocessing
+      .where((s) => s is RescaleStep || s is NormalizeStep || s is CastStep)
+      .toList();
+  if (elementwise.isEmpty) return;
   if (spec.dtype != DType.float32) return;
 
   b
@@ -268,8 +471,12 @@ void _preprocessing(
         b.writeln(
           '    // cast to $target: already the tensor\'s type, nothing to do',
         );
-      case ResizeStep() || CenterCropStep() || UnknownPreprocessingStep():
-        // checkGeneratable refuses these, so reaching here is a defect in it.
+      case ResizeStep() || CenterCropStep():
+        // Emitted by _spatialFactory instead: these change the element count,
+        // so they build the tensor rather than mutate one.
+        break;
+      case UnknownPreprocessingStep():
+        // checkGeneratable refuses this, so reaching here is a defect in it.
         throw StateError(
           '${step.kind} should have been refused before emitting',
         );
