@@ -203,10 +203,14 @@ in this repository.
 
 ```bash
 dart pub get
-dart analyze --fatal-warnings
-dart format --output=none --set-exit-if-changed .
+dart analyze --fatal-warnings packages/
+dart format --output=none --set-exit-if-changed packages/
 for p in fluttorch fluttorch_test fluttorch_gen; do (cd packages/$p && dart test); done
 ```
+
+Scoped to `packages/` because `examples/` holds a Flutter app whose generated sources use Flutter-SDK
+language features. Plain Dart tooling cannot parse it and reports that as a formatting failure, so it
+has its own job.
 
 ```bash
 pip install -e 'python/fluttorch_export[dev]'
@@ -216,6 +220,27 @@ PYTHONPATH=python/fluttorch_export pytest python/fluttorch_export/tests
 
 The manifest suite needs neither `torch` nor `executorch`. The export half does, and
 [`examples/spike/`](examples/spike/) shows the whole path end to end.
+
+The three bindings run against a real engine and are skipped everywhere the native library has not
+been built, which includes CI. Each has its own `tool/build_native.sh`, and building the ExecuTorch
+one takes about an hour: a suite that demanded it would be a suite nobody runs.
+
+```bash
+cd packages/fluttorch_executorch && tool/build_native.sh && dart test
+```
+
+Every published number is a command rather than a recollection. These are the ones behind
+[the tolerance table](packages/fluttorch_test/lib/src/tolerance.dart) and
+[`docs/benchmarks.md`](docs/benchmarks.md), and they run from `packages/fluttorch_executorch`:
+
+```bash
+dart run tool/parity_matrix.dart        # every backend this machine links, one report
+dart run tool/measure_tolerances.dart   # what each recipe and precision actually costs
+dart run tool/benchmark.dart            # codegen, load and per-inference cost
+```
+
+The fixtures they measure are written by `python/fluttorch_export/scripts/`, and each script's
+docstring says which gap it exists to close.
 
 ## Stability
 
