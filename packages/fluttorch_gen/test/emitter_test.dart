@@ -15,6 +15,13 @@ import 'package:test/test.dart';
 final _golden = File('test/golden/two_layer.fluttorch.dart');
 final _manifestFile = File('../../testdata/two_layer/two_layer.fluttorch.json');
 
+const _image = TensorSpec(
+  name: 'image',
+  dtype: DType.float32,
+  shape: [1, 3, 8, 8],
+  layout: TensorLayout.nchw,
+);
+
 ModelManifest manifestWith({
   List<PreprocessingStep> preprocessing = const [],
   List<TensorSpec>? inputs,
@@ -190,12 +197,57 @@ void main() {
       );
     });
 
-    test('a resize, because the manifest records no layout', () {
+    test('a resize, because the input declares no layout', () {
       // Understood and still not generatable: performing it means knowing which
       // axes are spatial, and NCHW and NHWC each give a plausible wrong answer.
       expectRefused(
         manifestWith(preprocessing: const [ResizeStep(height: 8, width: 8)]),
-        'no tensor layout',
+        'declares no layout',
+      );
+    });
+
+    test('a resize whose filter this generator does not emit', () {
+      // Named rather than approximated. Bicubic needs a four-tap kernel whose
+      // coefficient torch and PIL disagree about, so substituting bilinear
+      // would reproduce a resize that runs and is not the one training used.
+      expectRefused(
+        manifestWith(
+          inputs: const [_image],
+          preprocessing: const [
+            ResizeStep(height: 8, width: 8, interpolation: 'bicubic'),
+          ],
+        ),
+        'is not the one training applied',
+      );
+    });
+
+    test('a spatial step after an elementwise one', () {
+      // Refused rather than reordered. Bilinear resize and an affine rescale
+      // commute in exact arithmetic, which is what makes silently reordering
+      // them look safe: the rounding of either, or a cast between them, moves
+      // the result by an amount nobody would go looking for.
+      expectRefused(
+        manifestWith(
+          inputs: const [_image],
+          preprocessing: const [
+            RescaleStep(factor: 1 / 255),
+            ResizeStep(height: 8, width: 8),
+          ],
+        ),
+        'silently reorder',
+      );
+    });
+
+    test('spatial steps against a model with more than one input', () {
+      expectRefused(
+        manifestWith(
+          inputs: const [
+            _image,
+            TensorSpec(name: 'meta', dtype: DType.float32, shape: [1, 2]),
+          ],
+          preprocessing: const [ResizeStep(height: 8, width: 8)],
+        ),
+        'no way to tell which one they apply to',
       );
     });
 
@@ -204,7 +256,7 @@ void main() {
         manifestWith(
           preprocessing: const [CenterCropStep(height: 4, width: 4)],
         ),
-        'no tensor layout',
+        'declares no layout',
       );
     });
 

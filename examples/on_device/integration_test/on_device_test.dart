@@ -37,7 +37,9 @@ void main() {
     // nothing here restates the contract.
     final bytes = <String, Uint8List>{};
     for (var i = 0; i < manifest.goldens.length; i++) {
-      bytes[manifest.goldens[i].inputKeys.single] = await _asset('g${i}_in.bin');
+      bytes[manifest.goldens[i].inputKeys.single] = await _asset(
+        'g${i}_in.bin',
+      );
       bytes[manifest.goldens[i].outputKeys.single] = await _asset(
         'g${i}_out.bin',
       );
@@ -53,9 +55,7 @@ void main() {
     verifyArtifact(artifact: artifact, manifest: manifest);
   });
 
-  testWidgets('the binding is in the app, and reports its backends', (
-    _,
-  ) async {
+  testWidgets('the binding is in the app, and reports its backends', (_) async {
     // Resolved the way the platform wants: by name from jniLibs on Android, out
     // of the process image on iOS. If this throws, the packaging is what failed
     // rather than the model.
@@ -65,11 +65,9 @@ void main() {
   });
 
   testWidgets('the goldens hold on this device', (_) async {
-    final model = await ExecuTorchRuntime(NativeExecuTorchBindings.open()).load(
-      artifact: artifact,
-      manifest: manifest,
-      backend: 'xnnpack',
-    );
+    final model = await ExecuTorchRuntime(
+      NativeExecuTorchBindings.open(),
+    ).load(artifact: artifact, manifest: manifest, backend: 'xnnpack');
     addTearDown(model.dispose);
 
     // The claim, on the hardware. Same export, same references, same bound the

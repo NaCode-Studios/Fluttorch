@@ -247,3 +247,36 @@ class TestActivations:
                 ),
                 goldens=(GoldenCase("case-0", ("a",), ("b",), activation_keys=("k", "j")),),
             )
+
+
+class TestLayout:
+    """M31 · which axes are spatial, recorded rather than inferred."""
+
+    def test_a_layout_round_trips_through_the_document(self) -> None:
+        spec = TensorSpec("image", "float32", (1, 3, 8, 8), layout="nchw")
+        assert spec.to_dict()["layout"] == "nchw"
+
+    def test_absence_is_absence_rather_than_a_default(self) -> None:
+        # A manifest that says nothing is not one that says NCHW. Writing a
+        # default would make every tabular model claim to have spatial axes.
+        spec = TensorSpec("features", "float32", (1, 4))
+        assert "layout" not in spec.to_dict()
+        assert spec.layout is None
+
+    def test_an_unknown_layout_names_the_ones_there_are(self) -> None:
+        with pytest.raises(ManifestError, match="known: nchw, nhwc"):
+            TensorSpec("image", "float32", (1, 3, 8, 8), layout="nhcw")
+
+    def test_a_layout_only_describes_four_axes(self) -> None:
+        with pytest.raises(ManifestError, match="rank 2"):
+            TensorSpec("features", "float32", (1, 4), layout="nchw")
+
+    def test_it_says_which_axes_it_named(self) -> None:
+        assert TensorSpec("i", "float32", (1, 3, 8, 8), layout="nchw").spatial_axes == (2, 3)
+        assert TensorSpec("i", "float32", (1, 8, 8, 3), layout="nhwc").spatial_axes == (1, 2)
+
+    def test_asking_a_manifest_that_does_not_say_raises(self) -> None:
+        # Rather than returning a default, which is the failure the field
+        # exists to prevent: a resize down the wrong axes returns a picture.
+        with pytest.raises(ManifestError, match="declares no layout"):
+            _ = TensorSpec("features", "float32", (1, 4)).spatial_axes

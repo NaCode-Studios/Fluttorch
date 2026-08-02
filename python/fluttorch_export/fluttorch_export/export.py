@@ -20,7 +20,7 @@ import functools
 import hashlib
 import importlib
 import pathlib
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any
 
 import torch
@@ -117,6 +117,7 @@ def _specs(
     role: str,
     names: Sequence[str] | None,
     dynamic_batch: bool,
+    layouts: Mapping[str, str] | None = None,
 ) -> tuple[TensorSpec, ...]:
     out = []
     for i, t in enumerate(tensors):
@@ -126,7 +127,17 @@ def _specs(
         if dynamic_batch and shape:
             shape[0] = DYNAMIC_DIM
         name = names[i] if names and i < len(names) else f"{role}_{i}"
-        out.append(TensorSpec(name, _wire_dtype(t, role, i), tuple(shape)))
+        # Asked of the caller rather than guessed from the rank. A rank-4 tensor
+        # is not necessarily an image, and torch's own preference for NCHW is a
+        # convention rather than something the traced graph records.
+        out.append(
+            TensorSpec(
+                name,
+                _wire_dtype(t, role, i),
+                tuple(shape),
+                layout=(layouts or {}).get(name),
+            )
+        )
     return tuple(out)
 
 
@@ -546,6 +557,7 @@ def export_model(
     dynamic_batch: bool = False,
     quantization: str | None = None,
     taps: Sequence[str] | None = None,
+    input_layouts: Mapping[str, str] | None = None,
 ) -> ExportResult:
     """Export ``model``, and write the artifact, the manifest and the goldens.
 
@@ -569,7 +581,7 @@ def export_model(
     with torch.no_grad():
         reference = _as_tuple(model(*example))
 
-    inputs = _specs(example, "input", input_names, dynamic_batch)
+    inputs = _specs(example, "input", input_names, dynamic_batch, input_layouts)
     outputs = _specs(reference, "output", output_names, dynamic_batch)
 
     cases_in = _golden_inputs(golden_inputs, example, inputs)

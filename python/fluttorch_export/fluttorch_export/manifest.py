@@ -38,6 +38,15 @@ RUNTIMES: frozenset[str] = frozenset({"executorch", "litert", "onnx"})
 #: from before the field existed keeps meaning what it always meant.
 PRECISIONS: frozenset[str] = frozenset({"float16", "float32"})
 
+#: Axis orders a rank-4 tensor can declare, so a reader knows which axes are
+#: spatial. Absence is not a default: it means the manifest says nothing, and a
+#: reader must refuse to resize or crop rather than pick one, because NCHW and
+#: NHWC each produce a plausible and different answer from the same bytes.
+#:
+#: Only rank 4 carries a layout. A rank-2 table has no height, and a name for
+#: its axes would be a claim nobody could check.
+LAYOUTS: frozenset[str] = frozenset({"nchw", "nhwc"})
+
 #: Element types, keyed by the name written to the manifest. The value is the
 #: width in bytes, which is what makes ``elements x width == len(buffer)``
 #: checkable on both sides.
@@ -71,12 +80,25 @@ class TensorSpec:
     name: str
     dtype: str
     shape: tuple[int, ...]
+    layout: str | None = None
 
     def __post_init__(self) -> None:
         if not self.name:
             raise ManifestError(
                 "a tensor needs a name; no accessor can be generated for an empty one"
             )
+        if self.layout is not None:
+            if self.layout not in LAYOUTS:
+                raise ManifestError(
+                    f"unknown layout {self.layout!r} for {self.name!r}; "
+                    f"known: {', '.join(sorted(LAYOUTS))}"
+                )
+            if len(self.shape) != 4:
+                raise ManifestError(
+                    f"{self.name!r} declares layout {self.layout!r} and has rank "
+                    f"{len(self.shape)}; a layout names four axes, so it only "
+                    "describes a rank-4 tensor"
+                )
         if self.dtype not in DTYPES:
             raise ManifestError(
                 f"unknown dtype {self.dtype!r} for {self.name!r}; "
@@ -113,8 +135,27 @@ class TensorSpec:
             n *= actual
         return n * DTYPES[self.dtype]
 
+    @property
+    def spatial_axes(self) -> tuple[int, int]:
+        """The (height, width) axis indices this layout names.
+
+        Raises when no layout is declared, rather than returning a default: the
+        caller is asking which axes are spatial, and the honest answer to that
+        question on a manifest that does not say is that it does not say.
+        """
+        if self.layout is None:
+            raise ManifestError(
+                f"{self.name!r} declares no layout, so which axes are spatial is "
+                "unknown; record one at export to make resize and center_crop "
+                "generatable"
+            )
+        return (2, 3) if self.layout == "nchw" else (1, 2)
+
     def to_dict(self) -> dict[str, Any]:
-        return {"name": self.name, "dtype": self.dtype, "shape": list(self.shape)}
+        d: dict[str, Any] = {"name": self.name, "dtype": self.dtype, "shape": list(self.shape)}
+        if self.layout is not None:
+            d["layout"] = self.layout
+        return d
 
 
 @dataclass(frozen=True, slots=True)

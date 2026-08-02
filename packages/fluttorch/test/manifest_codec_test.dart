@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:fluttorch/fluttorch.dart';
 import 'package:test/test.dart';
 
@@ -273,6 +275,93 @@ void main() {
           ),
         ),
       );
+    });
+  });
+
+  _layoutTests();
+}
+
+void _layoutTests() {
+  group('M31 · the layout, which says which axes are spatial', () {
+    String withLayout(Object? layout, {List<int>? shape}) => jsonEncode({
+      'schema_version': 1,
+      'name': 'vision',
+      'weight_hash': 'sha256:${'0' * 64}',
+      'inputs': [
+        {
+          'name': 'image',
+          'dtype': 'float32',
+          'shape': shape ?? [1, 3, 8, 8],
+          if (layout != null) 'layout': layout,
+        },
+      ],
+      'outputs': [
+        {
+          'name': 'logits',
+          'dtype': 'float32',
+          'shape': [1, 2],
+        },
+      ],
+    });
+
+    test('it survives a round trip', () {
+      for (final l in TensorLayout.values) {
+        final decoded = ManifestCodec.decode(withLayout(l.wireName));
+        expect(decoded.inputs.single.layout, l);
+        final again = ManifestCodec.decode(ManifestCodec.encode(decoded));
+        expect(again.inputs.single.layout, l);
+      }
+    });
+
+    test('absence is null rather than a default', () {
+      // The distinction the whole field exists for. A manifest that says
+      // nothing is not a manifest that says NCHW, and a reader that treated it
+      // as one would resize down the wrong axes on every tabular model.
+      final decoded = ManifestCodec.decode(withLayout(null));
+      expect(decoded.inputs.single.layout, isNull);
+      final spec =
+          (ManifestCodec.toJson(decoded)['inputs'] as List).single
+              as Map<String, Object?>;
+      expect(spec.containsKey('layout'), isFalse);
+    });
+
+    test('an unknown layout is refused, not dropped', () {
+      // Dropping it would leave a spec reading "this tensor has no spatial
+      // axes", which is a different and wrong claim from "this build cannot
+      // tell you which".
+      expect(
+        () => ManifestCodec.decode(withLayout('nhcw')),
+        throwsA(
+          isA<ManifestFormatException>().having(
+            (e) => e.field,
+            'field',
+            contains('layout'),
+          ),
+        ),
+      );
+    });
+
+    test('a layout on a shape it cannot describe is refused', () {
+      expect(
+        () => ManifestCodec.decode(withLayout('nchw', shape: [1, 4])),
+        throwsA(
+          isA<ManifestFormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('cannot say which are spatial'),
+          ),
+        ),
+      );
+    });
+
+    test('each layout names the axes it is named after', () {
+      expect(TensorLayout.nchw.channelAxis, 1);
+      expect(TensorLayout.nchw.heightAxis, 2);
+      expect(TensorLayout.nhwc.heightAxis, 1);
+      expect(TensorLayout.nhwc.channelAxis, 3);
+      for (final l in TensorLayout.values) {
+        expect(l.batchAxis, 0);
+      }
     });
   });
 }

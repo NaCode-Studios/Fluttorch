@@ -45,9 +45,14 @@ FAIL  parity/case-3
 ```
 
 Fluttorch does not train models, convert between formats, or serve inference. It takes a model you
-exported with `torch.export` and makes the boundary between Python and Dart typed and verified. The
-workflow that runs the gate on every pull request is in
-[`docs/ci-parity-gate.md`](docs/ci-parity-gate.md).
+exported with `torch.export` and makes the boundary between Python and Dart typed and verified.
+
+**The documentation is at [nacode-studios.github.io/Fluttorch](https://nacode-studios.github.io/Fluttorch/)**:
+the [concepts](https://nacode-studios.github.io/Fluttorch/concepts.html), a
+[quickstart](https://nacode-studios.github.io/Fluttorch/quickstart.html), where a
+[tolerance](https://nacode-studios.github.io/Fluttorch/tolerance.html) comes from, and
+[what each failure means](https://nacode-studios.github.io/Fluttorch/errors.html) including the one
+that is deliberately not a failure at all.
 
 > **Status — `0.6.0`, early development.** The loop from `torch.export` to a typed Dart API to a
 > parity gate runs on hardware, and it reaches a phone. The binding cross-compiles for Android arm64

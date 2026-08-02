@@ -102,6 +102,7 @@ abstract final class ManifestCodec {
     'name': s.name,
     'dtype': s.dtype.wireName,
     'shape': s.shape,
+    if (s.layout != null) 'layout': s.layout!.wireName,
   };
 
   static List<TensorSpec> _specs(Map<String, Object?> json, String key) {
@@ -144,7 +145,39 @@ abstract final class ManifestCodec {
       name: _string(map, 'name', path: path),
       dtype: dtype,
       shape: List.unmodifiable(dims),
+      layout: _layout(map, dims, path),
     );
+  }
+
+  /// Reads the optional layout, rejecting one this build does not know and one
+  /// that cannot describe the shape it sits on.
+  ///
+  /// An unknown layout is refused rather than dropped. Dropping it would leave
+  /// a spec that reads as "this tensor has no spatial axes", which is a
+  /// different and wrong statement from "this build cannot tell you which".
+  static TensorLayout? _layout(
+    Map<String, Object?> map,
+    List<int> dims,
+    String path,
+  ) {
+    if (!map.containsKey('layout')) return null;
+    final wire = _string(map, 'layout', path: path);
+    final layout = TensorLayout.tryParse(wire);
+    if (layout == null) {
+      throw ManifestFormatException(
+        'unknown layout "$wire"; this build understands '
+        '${TensorLayout.values.map((l) => l.wireName).join(", ")}',
+        field: '$path.layout',
+      );
+    }
+    if (dims.length != TensorLayout.rank) {
+      throw ManifestFormatException(
+        'layout "$wire" names ${TensorLayout.rank} axes but the shape has '
+        '${dims.length}, so it cannot say which are spatial',
+        field: '$path.layout',
+      );
+    }
+    return layout;
   }
 
   // ── preprocessing ───────────────────────────────────────────────────────────

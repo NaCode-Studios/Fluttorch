@@ -1,0 +1,11 @@
+title: Fluttorch
+description: Ship PyTorch models to Flutter with a parity gate that fails the build when the numbers move.
+theme: jekyll-theme-primer
+url: https://nacode-studios.github.io
+baseurl: /Fluttorch
+
+# The brand assets and the images the README uses are not pages. Excluding them
+# keeps the site's navigation to the documents somebody came here to read.
+exclude:
+  - brand/
+  - fluttorch-hero.png
