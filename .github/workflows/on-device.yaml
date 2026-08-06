@@ -53,7 +53,7 @@ jobs:
 
       - name: Cache the ExecuTorch build
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.EXECUTORCH_DIR }}
           # Both files that decide what the tree contains are in the key. The
