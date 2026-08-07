@@ -54,22 +54,11 @@ the [concepts](https://nacode-studios.github.io/Fluttorch/concepts.html), a
 [what each failure means](https://nacode-studios.github.io/Fluttorch/errors.html) including the one
 that is deliberately not a failure at all.
 
-> **Status — `1.0.0`.** The API is frozen and [`STABILITY.md`](STABILITY.md) says what that covers:
-> four surfaces carry a compatibility promise and only one of them is a Dart API. A deprecated API
-> survives at least two minor releases, which is ExecuTorch's own policy rather than a number chosen
-> here.
-> The tolerances are measured rather than assumed, and the measurement said something worth knowing:
-> the two-layer model drifts up to eight times further than the convolutional one, and it is the
-> simpler network. Its outputs land near `9.4` while the other ends in a softmax, and a relative error
-> is measured against the output while the rounding happened on intermediates. One bound is still
-> unmeasured and says so, because nothing here exports int4.
-> What `1.0` does not mean is that every engine runs every model. ExecuTorch lowers VoltaCast and then
-> fails to execute it, identically under its own Python runtime, and the suite records that as a
-> failing expectation so the day upstream fixes it, the suite says so.
-> `fluttorch_executorch` and the other two bindings stay unpublished because pub.dev cannot carry the
-> native half.
-> The [board](https://github.com/orgs/NaCode-Studios/projects/6) is the plan of record and tracks it
-> milestone by milestone.
+> **Status — `1.0`, stable.** The API is frozen and [`STABILITY.md`](STABILITY.md) says what that
+> covers. What `1.0` does not mean is that every engine runs every model: ExecuTorch lowers VoltaCast
+> and then fails to execute it, identically under its own Python runtime, and the suite records it as
+> a failing expectation, so the day upstream fixes it, the suite says so. The
+> [board](https://github.com/orgs/NaCode-Studios/projects/6) is the plan of record.
 
 ## Why Fluttorch
 
@@ -350,18 +339,9 @@ packages/fluttorch          manifest, tensor specs, drift metrics, runtime inter
 
 ## Roadmap
 
-| Version | Tiers | What landed |
-| --- | --- | --- |
-| `0.4.0` | 0 to 4 | The manifest schema, with a Python writer and a Dart reader that reproduce the same document byte for byte down to denormals and negative zero. `fluttorch-export`, `fluttorch_gen`, and the parity gate. |
-| `0.5.0` | 5 and 6 | Fluttorch's own `dart:ffi` binding to ExecuTorch, carrying the four hooks no published binding exposes: a backend pinned at load, repeatable execution, activation taps, and output buffers the caller owns. |
-| `0.6.0` | 7 | The binding reaches a phone. ExecuTorch cross-compiles for Android arm64 and iOS, and ONNX Runtime and LiteRT implement the same C ABI, which turns the runtime-agnostic claim into something measured. |
-| `0.7.0` | 8 | Spatial preprocessing generated rather than refused, five failures with five distinct remedies, and VoltaCast exported and measured. |
-
-**`1.0.0`.** Tier 9. The tolerances are measured against two models rather than started from, and the
-parity matrix runs on one with convolutions and normalisation instead of two linear layers that had
-nowhere to disagree. An artifact can be more than one file, so a model whose weights leave its graph
-is carried with a hash that still covers the numbers. The API freeze is written down, and so is what
-a run costs.
+**Shipped (`1.0.0`).** Export, generated API and parity replay work end to end over three backends
+that share one C ABI, under tolerances measured on two models rather than assumed.
+[`CHANGELOG.md`](CHANGELOG.md) has what landed in each release.
 
 **Next.** The targets Flutter has that this runtime does not yet reach: the web backend, a signed
 manifest, and parity proven where cost is not.
