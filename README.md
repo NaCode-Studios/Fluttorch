@@ -50,9 +50,10 @@ exported with `torch.export` and makes the boundary between Python and Dart type
 **The documentation is at [nacode-studios.github.io/Fluttorch](https://nacode-studios.github.io/Fluttorch/)**:
 the [concepts](https://nacode-studios.github.io/Fluttorch/concepts.html), a
 [quickstart](https://nacode-studios.github.io/Fluttorch/quickstart.html), where a
-[tolerance](https://nacode-studios.github.io/Fluttorch/tolerance.html) comes from, and
-[what each failure means](https://nacode-studios.github.io/Fluttorch/errors.html) including the one
-that is deliberately not a failure at all.
+[tolerance](https://nacode-studios.github.io/Fluttorch/tolerance.html) comes from,
+[what each backend is verified to do](https://nacode-studios.github.io/Fluttorch/backend-coverage.html),
+and [what each failure means](https://nacode-studios.github.io/Fluttorch/errors.html) including the
+one that is deliberately not a failure at all.
 
 > **Status — `1.0`, stable.** The API is frozen and [`STABILITY.md`](STABILITY.md) says what that
 > covers. What `1.0` does not mean is that every engine runs every model: ExecuTorch lowers VoltaCast
@@ -196,25 +197,10 @@ await expectParity(model, goldens: goldens, tolerance: Tolerance(
 ));
 ```
 
-### Reading a failure
-
-A drift report names the tensor, the bound it broke, the element that broke it, and the backend that
-produced the number. None of those is inferable from the others.
-
-```
-FAIL  parity/case-3
-      backend: xnnpack  quantization: int8-static  precision: float32
-      output "logits"  max |Δ| 1.72  >  Tolerance(atol 0.2, rtol 0.2, cos ≥ 0.998)  worst at [0]: 14.0210 vs 12.3000
-        2 of 4 elements (50.0%) exceed the elementwise bound
-      no layer attribution: backend "xnnpack" offers no activation taps
-```
-
-That last line is a capability, not an apology. Export with `--taps fc1,fc2` and a backend that can
-read intermediates, and the report names the earliest layer whose numbers moved instead of only the
-output that was wrong.
-
-Drift is deliberately not an exception. It is a measurement, and turning a measurement into an error
-would leave nowhere to put the number.
+A report names the tensor, the bound it broke, the element that broke it and the backend that produced
+the number, and it says all of that whether the answer is pass or fail.
+[What each failure means](https://nacode-studios.github.io/Fluttorch/errors.html) reads one, and
+argues why drift is a measurement here rather than an exception.
 
 ### Choosing a runtime
 
@@ -243,19 +229,6 @@ Whether a device can expose intermediates or promise a repeatable reduction orde
 hardware. Asking for determinism you cannot have throws rather than quietly running without it,
 because a tolerance chosen against a promise that was silently dropped is a tolerance measuring noise.
 
-### On a hot path
-
-`run` allocates an output tensor per call. `runInto` writes into buffers you keep:
-
-```dart
-final outputs = [Tensor.zeros(ClassifierLogits.spec)];
-await model.runInto(inputs: [image.tensor], outputs: outputs);
-```
-
-It saves four to seven microseconds and the saving does not scale with the model, so it is three times
-faster on something small called at frame rate and under two per cent on a convolutional network.
-[`docs/benchmarks.md`](docs/benchmarks.md) has the numbers and the tool that produced them.
-
 ### Preprocessing, generated rather than rewritten
 
 Preprocessing is where the two-language problem bites hardest: written once in Python for training and
@@ -273,25 +246,6 @@ picture, which is why that one is generated rather than trusted to a second impl
 
 A step this build cannot perform is named and refused rather than approximated with the nearest one it
 has.
-
-### Every backend at once
-
-```bash
-cd packages/fluttorch_executorch && dart run tool/parity_matrix.dart
-```
-
-```
-PASS  parity matrix  8 golden(s) across 4 backend(s)
-  golden       portable       xnnpack        coreml           mps
-  case-0        1.3e-7        1.3e-7        3.1e-4        1.2e-4
-  ...
-  coreml: no quantization, float16, measured against Tolerance(atol 0.001, rtol 0.02, cos ≥ 0.9999)
-```
-
-Each column answers to the bound its own manifest implies, from the recipe and the precision together,
-because Core ML and MPS lower to float16 by default and an artifact that did is not wrong for saying
-so. A backend the build lacks is listed as not run rather than omitted: a matrix that quietly drops a
-column reads as coverage.
 
 ### When the weights do not fit in the graph
 
