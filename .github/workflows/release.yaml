@@ -170,7 +170,7 @@ jobs:
           [ -s checksums.txt ] || { echo "::error::no publishable package found"; exit 1; }
           cat checksums.txt
 
-      - uses: actions/attest-build-provenance@v3
+      - uses: actions/attest-build-provenance@v4
         with:
           subject-checksums: checksums.txt
 
