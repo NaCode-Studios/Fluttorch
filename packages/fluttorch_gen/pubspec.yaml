@@ -19,7 +19,7 @@ environment:
 resolution: workspace
 
 dependencies:
-  build: ^4.0.0
+  build: ^5.0.0
   # The generator formats its own output with the formatter the repository uses,
   # so generated code needs no formatting pass and a golden cannot drift from the
   # emitter over whitespace.
